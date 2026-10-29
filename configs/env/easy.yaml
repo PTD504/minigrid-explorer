@@ -1,0 +1,16 @@
+name: "easy"
+size: 17
+num_rooms_min: 3
+num_rooms_max: 4
+room_min_size: 4
+room_max_size: 6
+num_pois: 2
+num_monsters: 1
+monster_period: 3
+monster_detect_radius: 5
+max_steps: 250
+target_coverage: 0.95
+poi_min_dist: 4
+monster_min_dist: 5
+num_dead_ends: 2
+num_extra_corridors: 1

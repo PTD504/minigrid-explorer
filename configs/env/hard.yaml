@@ -1,0 +1,16 @@
+name: "hard"
+size: 33
+num_rooms_min: 8
+num_rooms_max: 10
+room_min_size: 4
+room_max_size: 8
+num_pois: 5
+num_monsters: 2
+monster_period: 2
+monster_detect_radius: 7
+max_steps: 700
+target_coverage: 0.95
+poi_min_dist: 8
+monster_min_dist: 9
+num_dead_ends: 4
+num_extra_corridors: 3

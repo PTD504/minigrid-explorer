@@ -1,0 +1,4 @@
+# Observation parameters
+crop_size: 15        # Size K for egocentric memory crop (K x K)
+use_memory: true     # Whether to provide the egocentric memory crop
+include_step_ratio: true

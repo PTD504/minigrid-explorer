@@ -1,0 +1,9 @@
+# Reward weights and penalty parameters
+w_reveal: 0.02       # Reward per newly revealed walkable tile
+w_poi: 1.0           # Reward per newly discovered POI
+c_step: 0.002        # Small step penalty to encourage efficiency
+c_bump: 0.02         # Penalty for running into a wall
+c_loop: 0.01         # Penalty for repeating recent states without new info
+c_death: 2.0         # Penalty for collision with a monster (ensures c_death > c_step * max_steps)
+b_done: 1.0          # Bonus for achieving target coverage, scaled by (1 - t/T)
+loop_window: 20      # Window size for loop detection
