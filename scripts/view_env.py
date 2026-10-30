@@ -20,13 +20,14 @@ import numpy as np
 from minigrid.manual_control import ManualControl
 
 from explorer.envs.explore_env import ExploreEnv
+from explorer.utils.config import get_env_config
 
 
 class ExploreManualControl(ManualControl):
     """Clean manual controller inheriting directly from MiniGrid's ManualControl.
 
-    Adds support for WASD keys, dynamic difficulty switching (1, 2, 3), and
-    randomized seed stepping (N).
+    Adds support for WASD keys, dynamic difficulty switching (1, 2, 3),
+    randomized seed stepping (N), and custom monster parameters.
     """
 
     def __init__(
@@ -34,9 +35,11 @@ class ExploreManualControl(ManualControl):
         env: ExploreEnv,
         seed: int = 42,
         difficulty: str = "easy",
+        custom_config: dict | None = None,
     ):
         super().__init__(env, seed=seed)
         self.difficulty = difficulty
+        self.custom_config = custom_config or {}
         self.rng = np.random.default_rng()
 
     def switch_difficulty(self, difficulty: str) -> None:
@@ -44,11 +47,43 @@ class ExploreManualControl(ManualControl):
         print(f"\n[Difficulty Switched] -> {difficulty.upper()} (Seed: {self.seed})")
         self.difficulty = difficulty
         self.env.close()
-        self.env = ExploreEnv(difficulty=difficulty, render_mode="human")
+        config = get_env_config(difficulty)
+        config.update(self.custom_config)
+        self.env = ExploreEnv(difficulty=difficulty, config=config, render_mode="human")
         self.reset(self.seed)
+
+    def step(self, action: int) -> None:
+        """Execute action, inspect step feedback, and handle death/termination."""
+        _obs, _reward, terminated, truncated, info = self.env.step(action)
+        monsters_str = ", ".join(f"M{m.id}@{m.pos}[{m.state}]" for m in self.env.monsters)
+        rev_cov = info.get("revealed_coverage", 0.0) * 100
+        pois_found = f"{info.get('discovered_pois', 0)}/{info.get('total_pois', 0)}"
+        status_msg = f"Step {self.env.step_count} | Agent@{self.env.agent_pos} | Cov: {rev_cov:.1f}% | POIs: {pois_found}"
+        if monsters_str:
+            status_msg += f" | {monsters_str}"
+        if info.get("bump"):
+            status_msg += " | [BUMP WALL]"
+        print(status_msg)
+
+        if terminated:
+            end_reason = info.get("end_reason")
+            if end_reason == "death":
+                print("\n" + "!" * 50)
+                print("  [GAME OVER] You were slain by a monster!")
+                print("!" * 50 + "\n")
+            else:
+                print(f"\n[Episode Terminated] Reason: {end_reason}")
+            self.reset(self.seed)
+        elif truncated:
+            print("\n[Episode Truncated] Time limit reached.")
+            self.reset(self.seed)
+        else:
+            self.env.render()
+
 
     def key_handler(self, event) -> None:
         key: str = event.key
+
 
         # WASD navigation bindings
         if key == "w":
@@ -94,11 +129,27 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Manual control player for MiniGrid Explorer")
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="easy", help="Map difficulty")
     parser.add_argument("--seed", type=int, default=42, help="Map seed")
+    parser.add_argument("--num-monsters", type=int, default=None, help="Override number of monsters (e.g. 1, 2, 3)")
+    parser.add_argument("--monster-period", type=int, default=None, help="Override monster movement speed (moves every N steps)")
+    parser.add_argument("--monster-detect-radius", type=int, default=None, help="Override monster chase detection radius")
     args = parser.parse_args()
+
+    custom_config: dict[str, int] = {}
+    if args.num_monsters is not None:
+        custom_config["num_monsters"] = args.num_monsters
+    if args.monster_period is not None:
+        custom_config["monster_period"] = args.monster_period
+    if args.monster_detect_radius is not None:
+        custom_config["monster_detect_radius"] = args.monster_detect_radius
+
+    config = get_env_config(args.difficulty)
+    config.update(custom_config)
 
     print("\n" + "=" * 60)
     print("  MINIGRID EXPLORER - MANUAL CONTROL")
     print("=" * 60)
+    print(f"  Configuration : {args.difficulty.upper()} (Seed: {args.seed})")
+    print(f"  Monsters      : {config.get('num_monsters', 1)} | Period: {config.get('monster_period', 3)} | Detect Radius: {config.get('monster_detect_radius', 5)}")
     print("  Controls:")
     print("    - [W] or [Up Arrow]    : Move Forward")
     print("    - [A] or [Left Arrow]  : Turn Left")
@@ -109,9 +160,15 @@ def main() -> None:
     print("    - [ESC]                : Exit")
     print("=" * 60 + "\n")
 
-    env = ExploreEnv(difficulty=args.difficulty, render_mode="human")
-    controller = ExploreManualControl(env, seed=args.seed, difficulty=args.difficulty)
+    env = ExploreEnv(difficulty=args.difficulty, config=config, render_mode="human")
+    controller = ExploreManualControl(
+        env,
+        seed=args.seed,
+        difficulty=args.difficulty,
+        custom_config=custom_config,
+    )
     controller.start()
+
 
 
 if __name__ == "__main__":

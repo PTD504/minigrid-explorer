@@ -104,3 +104,82 @@ def compute_raycast_vis_mask(grid: Grid, agent_pos: tuple[int, int]) -> np.ndarr
                 grid.set(i, j, None)
 
     return vis_mask
+
+
+def has_line_of_sight(grid: Grid, p1: tuple[int, int], p2: tuple[int, int]) -> bool:
+    """Check if there is an unoccluded line of sight between two positions on the grid.
+
+    Uses corner-aware Bresenham raycasting to ensure that:
+    1. Intermediate walls block line of sight.
+    2. Diagonal rays cannot slip through diagonal wall corners.
+    3. Transparent objects (monsters, POIs) do not block line of sight.
+    """
+    if p1 == p2:
+        return True
+
+    ax, ay = p1
+    tx, ty = p2
+
+    dx = abs(tx - ax)
+    dy = abs(ty - ay)
+    x, y = ax, ay
+    sx = 1 if ax < tx else -1
+    sy = 1 if ay < ty else -1
+
+    if dx > dy:
+        err = dx / 2.0
+        while x != tx:
+            err -= dy
+            prev_x, prev_y = x, y
+            if err < 0:
+                y += sy
+                err += dx
+            x += sx
+
+            if (x, y) == (tx, ty):
+                if x != prev_x and y != prev_y:
+                    c1 = grid.get(prev_x, y)
+                    c2 = grid.get(x, prev_y)
+                    if (c1 and not c1.see_behind()) and (c2 and not c2.see_behind()):
+                        return False
+                break
+
+            cell = grid.get(x, y)
+            if cell and not cell.see_behind():
+                return False
+
+            if x != prev_x and y != prev_y:
+                c1 = grid.get(prev_x, y)
+                c2 = grid.get(x, prev_y)
+                if (c1 and not c1.see_behind()) or (c2 and not c2.see_behind()):
+                    return False
+    else:
+        err = dy / 2.0
+        while y != ty:
+            err -= dx
+            prev_x, prev_y = x, y
+            if err < 0:
+                x += sx
+                err += dy
+            y += sy
+
+            if (x, y) == (tx, ty):
+                if x != prev_x and y != prev_y:
+                    c1 = grid.get(prev_x, y)
+                    c2 = grid.get(x, prev_y)
+                    if (c1 and not c1.see_behind()) and (c2 and not c2.see_behind()):
+                        return False
+                break
+
+            cell = grid.get(x, y)
+            if cell and not cell.see_behind():
+                return False
+
+            if x != prev_x and y != prev_y:
+                c1 = grid.get(prev_x, y)
+                c2 = grid.get(x, prev_y)
+                if (c1 and not c1.see_behind()) or (c2 and not c2.see_behind()):
+                    return False
+
+    return True
+

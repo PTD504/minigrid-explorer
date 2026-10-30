@@ -42,7 +42,8 @@ def inspect_seeds(difficulty: str = "easy", seeds: list[int] | None = None, outp
         num_rooms = len(env.map_metadata.rooms) if env.map_metadata else 0
         walkable = len(env.walkable_tiles)
         pois = len(env.poi_positions)
-        ax.set_title(f"Seed {seed} | Rooms: {num_rooms} | POIs: {pois} | Walkable: {walkable}", fontsize=11)
+        monsters = len(env.monsters)
+        ax.set_title(f"Seed {seed} | Rooms: {num_rooms} | POIs: {pois} | Monsters: {monsters} | Walkable: {walkable}", fontsize=9)
         ax.axis("off")
         env.close()
 
@@ -84,9 +85,10 @@ def compare_difficulties(seed: int = 42, output_path: str | None = None, show: b
         num_rooms = len(env.map_metadata.rooms) if env.map_metadata else 0
         walkable = len(env.walkable_tiles)
         pois = len(env.poi_positions)
+        monsters = len(env.monsters)
         ax.set_title(
-            f"{diff.upper()} ({env.width}x{env.height})\nRooms: {num_rooms} | POIs: {pois} | Walkable: {walkable}",
-            fontsize=12,
+            f"{diff.upper()} ({env.width}x{env.height})\nRooms: {num_rooms} | POIs: {pois} | Monsters: {monsters} | Walkable: {walkable}",
+            fontsize=11,
             fontweight="bold",
         )
         ax.axis("off")
