@@ -9,6 +9,8 @@ from minigrid.core.mission import MissionSpace
 from minigrid.minigrid_env import MiniGridEnv
 
 from explorer.envs.map_generator import MapMetadata, ProceduralMapGenerator
+from explorer.envs.monster import MonsterEntity, MonsterManager
+from explorer.envs.tracking import ExplorationTracker
 from explorer.envs.visibility import compute_raycast_vis_mask
 from explorer.utils.config import get_env_config
 
@@ -51,9 +53,12 @@ class ExploreEnv(MiniGridEnv):
         self.map_metadata: MapMetadata | None = None
         self.walkable_tiles: set[tuple[int, int]] = set()
         self.poi_positions: set[tuple[int, int]] = set()
+        self.monster_manager: MonsterManager | None = None
+        self.monsters: list[MonsterEntity] = []
+        self.tracker: ExplorationTracker = ExplorationTracker(set(), set())
 
     def _gen_grid(self, width: int, height: int) -> None:
-        """Procedurally generate map layout with rooms, corridors, and POIs."""
+        """Procedurally generate map layout with rooms, corridors, POIs, and monsters."""
         self.grid, self.map_metadata = self.map_generator.generate(
             width, height, self.np_random
         )
@@ -64,6 +69,44 @@ class ExploreEnv(MiniGridEnv):
         self.walkable_tiles = set(self.map_metadata.walkable_tiles)
         self.poi_positions = set(self.map_metadata.poi_positions)
         self.mission = MISSION
+
+        # Initialize exploration tracker
+        self.tracker.reset(self.walkable_tiles, self.poi_positions)
+
+        # Initialize deterministic monster manager
+        monster_seed = int(self.np_random.integers(0, 1_000_000_000))
+        self.monster_manager = MonsterManager(
+            config=self.config,
+            seed=monster_seed,
+            rooms=self.map_metadata.rooms,
+            walkable_tiles=self.walkable_tiles,
+            agent_start_pos=self.agent_pos,
+            grid=self.grid,
+            poi_positions=self.poi_positions,
+        )
+        self.monsters = self.monster_manager.monsters
+
+    def reset(self, *args, **kwargs):
+        """Reset environment and initialize initial step-0 visibility tracking."""
+        obs, info = super().reset(*args, **kwargs)
+        # Process initial step-0 field of view
+        top_x, top_y, _, _ = self.get_view_exts()
+        _, vis_mask = self.gen_obs_grid()
+        delta_rev, delta_poi = self.tracker.update(
+            agent_pos=self.agent_pos,
+            agent_dir=self.agent_dir,
+            top_x=top_x,
+            top_y=top_y,
+            vis_mask=vis_mask,
+            agent_view_size=self.agent_view_size,
+        )
+        info.update({
+            "delta_revealed": delta_rev,
+            "delta_pois": delta_poi,
+            **self.tracker.get_eval_metrics(),
+        })
+        return obs, info
+
 
     def gen_obs_grid(self, agent_view_size: int | None = None) -> tuple[Grid, np.ndarray]:
         """Generate the partially observable sub-grid using true raycast line-of-sight.
@@ -97,6 +140,108 @@ class ExploreEnv(MiniGridEnv):
     def step(
         self, action: int
     ) -> tuple[dict[str, Any], SupportsFloat, bool, bool, dict[str, Any]]:
-        """Execute a step in the environment."""
-        obs, reward, terminated, truncated, info = super().step(action)
+        """Execute a single environment step according to design spec §4.5.
+
+        Order of operations:
+        1. Apply agent action (turn or move forward; check for wall bumps).
+        2. Advance monsters if due for movement this step.
+        3. Check for collisions (same tile, swap crossing, or stepping onto monster).
+        4. Check termination criteria (death > coverage > timeout).
+        5. Generate partially observable observation.
+        """
+        self.step_count += 1
+        reward = 0.0
+        terminated = False
+        truncated = False
+        bump = False
+
+        prev_agent_pos = tuple(self.agent_pos)
+
+        # 1. Apply agent action
+        if action == self.actions.left:
+            self.agent_dir = (self.agent_dir - 1) % 4
+        elif action == self.actions.right:
+            self.agent_dir = (self.agent_dir + 1) % 4
+        elif action == self.actions.forward:
+            fwd_pos = tuple(self.front_pos)
+            if not (0 <= fwd_pos[0] < self.width and 0 <= fwd_pos[1] < self.height):
+                bump = True
+            else:
+                fwd_cell = self.grid.get(*fwd_pos)
+                if fwd_cell is not None and not fwd_cell.can_overlap():
+                    bump = True
+                else:
+                    self.agent_pos = fwd_pos
+
+        # 2. Advance monsters
+        monster_moves: list[tuple[tuple[int, int], tuple[int, int]]] = []
+        if self.monster_manager is not None:
+            monster_moves = self.monster_manager.step(
+                grid=self.grid,
+                agent_pos=self.agent_pos,
+                step_count=self.step_count,
+            )
+
+        # 3. Collision detection (both same-tile collision and path-swap collision)
+        collision = False
+        for m_old, m_new in monster_moves:
+            # Same tile collision
+            if self.agent_pos == m_new:
+                collision = True
+                break
+            # Swap collision: agent moved into monster's old tile and monster moved into agent's old tile
+            if self.agent_pos == m_old and m_new == prev_agent_pos:
+                collision = True
+                break
+            # Agent moved into monster's tile before monster moved
+            if self.agent_pos == m_old:
+                collision = True
+                break
+
+        if not collision:
+            for m in self.monsters:
+                if self.agent_pos == m.pos:
+                    collision = True
+                    break
+
+        # 4. Update exploration tracking from agent's new field of view
+        top_x, top_y, _, _ = self.get_view_exts()
+        _, vis_mask = self.gen_obs_grid()
+        delta_revealed, delta_pois = self.tracker.update(
+            agent_pos=self.agent_pos,
+            agent_dir=self.agent_dir,
+            top_x=top_x,
+            top_y=top_y,
+            vis_mask=vis_mask,
+            agent_view_size=self.agent_view_size,
+        )
+
+        # 5. Check termination conditions (strictly death or timeout; no privileged coverage stop)
+        end_reason = None
+        if collision:
+            terminated = True
+            end_reason = "death"
+        elif self.step_count >= self.max_steps:
+            truncated = True
+            end_reason = "timeout"
+
+        # 6. Generate observation and diagnostic info
+        obs = self.gen_obs()
+
+        info: dict[str, Any] = {
+            "bump": bump,
+            "end_reason": end_reason,
+            "step_count": self.step_count,
+            "delta_revealed": delta_revealed,
+            "delta_pois": delta_pois,
+            "monsters": [
+                {"id": m.id, "pos": m.pos, "state": m.state}
+                for m in self.monsters
+            ],
+            **self.tracker.get_eval_metrics(),
+        }
+
+        if self.render_mode == "human":
+            self.render()
+
         return obs, reward, terminated, truncated, info
