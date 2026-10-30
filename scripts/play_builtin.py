@@ -1,6 +1,7 @@
 import sys
 
 import gymnasium as gym
+import minigrid  # noqa: F401 - registers MiniGrid environments in Gymnasium registry
 
 env_id = sys.argv[1] if len(sys.argv) > 1 else "MiniGrid-FourRooms-v0"
 env = gym.make(env_id)
@@ -18,3 +19,4 @@ for _ in range(20):
     if term or trunc:
         break
 print("after 20 random steps: reward =", r, "| step_count =", u.step_count)
+env.close()

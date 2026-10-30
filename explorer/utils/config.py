@@ -27,6 +27,11 @@ def get_reward_config(config_name: str = "default") -> dict[str, Any]:
     return load_yaml(f"reward/{config_name}.yaml")
 
 
+def get_obs_config(config_name: str = "default") -> dict[str, Any]:
+    """Load observation configuration."""
+    return load_yaml(f"obs/{config_name}.yaml")
+
+
 def get_seeds_config() -> dict[str, Any]:
     """Load train, val, and test seed split configurations."""
     return load_yaml("seeds.yaml")

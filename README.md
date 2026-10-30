@@ -44,6 +44,7 @@ minigrid-explorer/
 │   │   ├── map_generator.py     # Procedural dungeon map generator (MST + dead-ends)
 │   │   ├── monster.py           # Deterministic monster manager (patrol & chase)
 │   │   ├── tracking.py          # Strict POMDP exploration & POI discovery tracker
+│   │   ├── wrappers.py          # Observation Memory Wrapper (egocentric crop, no-leak)
 │   │   └── explore_env.py       # Main gymnasium environment
 │   └── utils/                   # Shared helper utilities
 │       ├── __init__.py
@@ -54,11 +55,13 @@ minigrid-explorer/
 │   ├── test_monster.py          # Monster LoS, collision, swap, and determinism tests
 │   ├── test_reset.py            # Reset reproducibility and action space tests
 │   ├── test_tracking.py         # Monotonic coverage, POI LoS, and termination tests
-│   └── test_visibility.py       # Line-of-Sight and wall occlusion tests
+│   ├── test_visibility.py       # Line-of-Sight and wall occlusion tests
+│   └── test_wrappers.py         # Egocentric rotation, memory crop, and no-leak tests
 ├── scripts/                     # Developer tools and demonstration scripts
 │   ├── inspect_maps.py          # Batch procedural map visualizer
 │   ├── play_builtin.py          # MiniGrid baseline exploration helper
 │   ├── view_env.py              # Interactive manual controller (ManualControl)
+│   ├── visualize_obs.py         # Observation wrapper and memory crop inspector
 │   └── visualize_tracking.py    # Exploration coverage and monster rollout visualizer
 ├── pyproject.toml               # Project metadata and dependencies (uv / pip)
 ├── design.md                    # Detailed architectural specification and decision log
@@ -77,7 +80,7 @@ minigrid-explorer/
 | **Connectivity & Invariant Tests**| Completed | 100% BFS reachability verification, determinism checks, anti-suicide checks. |
 | **Dynamic Threat (Monster)** | Completed | Deterministic patrol & chase behaviors, raycast LoS, collision & swap mechanics. |
 | **Exploration Tracking & POIs** | Completed | Strict POMDP tracking, monotonic coverage metrics, zero privileged leak. |
-| **Observation Memory Wrapper** | Scheduled | Egocentric memory crop, vis_mask filtering (no privileged leak). |
+| **Observation Memory Wrapper** | Completed | Egocentric memory crop (KxKx4), one-hot view (7x7x5), step ratio, zero leak. |
 | **Reward Engine & Loop Detection** | Scheduled | Telescoping coverage reward, state-repetition penalty. |
 | **Baselines Suite** | Scheduled | Random, Wall-Follower, Frontier Explorer, Oracle. |
 | **RL Training Pipeline** | Scheduled | PPO & RecurrentPPO with SB3 / sb3-contrib. |
@@ -197,6 +200,32 @@ The resulting figure illustrates:
 - **Right Panel (Exploration State)**: The actual area revealed by the agent (fog-of-war effect), agent path history, and live coverage percentages.
 
 ![Exploration Tracking Demo](assets/maps/exploration_tracking_demo.png)
+
+---
+
+## Observation Memory Wrapper & POMDP Interface
+
+To address Partial Observability (POMDP) without leaking ground-truth data, `ObservationMemoryWrapper` (`explorer/envs/wrappers.py`) converts raw MiniGrid observations into structured tensor representations for the Policy:
+
+- **`view` ($7 \times 7 \times 5$, `float32`)**: Egocentric one-hot encoding of currently visible tiles via raycast line-of-sight (`unseen`, `empty`, `wall`, `poi`, `monster`).
+- **`memory` ($15 \times 15 \times 4$, `float32`)**: Egocentric crop centered on the agent ($[7, 7]$) and rotated to the agent's heading, tracking accumulated knowledge (`revealed`, `visited`, `known_wall`, `known_poi`).
+- **`step_ratio` ($1,$, `float32`)**: Normalized step progression ($t / T \in [0.0, 1.0]$).
+
+### Visualizing the Observation Wrapper
+Run `scripts/visualize_obs.py` to inspect both live terminal ASCII logs and a multi-panel diagnostic plot:
+
+```bash
+# Run visual inspection on Easy difficulty (saves to assets/demo/observation_wrapper_demo.png)
+uv run python scripts/visualize_obs.py --difficulty easy --seed 42 --steps 30
+```
+
+The resulting figure compares:
+1. **Global World Map**: True dungeon layout with agent trajectory and spawn point.
+2. **Local View ($7 \times 7$)**: Immediate line-of-sight field of view (agent at bottom facing UP).
+3. **Memory Crop ($15 \times 15$)**: Egocentric spatial memory with the agent at center $[7, 7]$.
+4. **4 Memory Channels**: Individual decomposition of revealed area, visited path trail, known walls, and discovered POIs.
+
+![Observation Memory Wrapper Demo](assets/demo/observation_wrapper_demo.png)
 
 ---
 

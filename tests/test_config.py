@@ -1,10 +1,19 @@
 from explorer.utils.config import (
     get_env_config,
+    get_obs_config,
     get_reward_config,
     get_seeds_config,
     validate_config_invariants,
     validate_seed_splits,
 )
+
+
+def test_obs_config_loaded():
+    """Verify default observation config loads correct values."""
+    obs_cfg = get_obs_config()
+    assert obs_cfg.get("crop_size") == 15
+    assert obs_cfg.get("use_memory") is True
+    assert obs_cfg.get("include_step_ratio") is True
 
 
 def test_seed_splits_disjoint():
