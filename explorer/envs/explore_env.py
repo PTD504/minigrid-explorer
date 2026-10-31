@@ -12,7 +12,8 @@ from explorer.envs.map_generator import MapMetadata, ProceduralMapGenerator
 from explorer.envs.monster import MonsterEntity, MonsterManager
 from explorer.envs.tracking import ExplorationTracker
 from explorer.envs.visibility import compute_raycast_vis_mask
-from explorer.utils.config import get_env_config
+from explorer.rewards import RewardEngine
+from explorer.utils.config import get_env_config, get_reward_config
 
 MISSION = "explore the map"
 
@@ -27,12 +28,21 @@ class ExploreEnv(MiniGridEnv):
         self,
         difficulty: str = "easy",
         config: dict[str, Any] | None = None,
+        reward_config: dict[str, Any] | None = None,
         max_steps: int | None = None,
         size: int | None = None,
+        terminate_on_coverage: bool = False,
         **kwargs,
     ):
         self.difficulty = difficulty
         self.config = config or get_env_config(difficulty)
+        self.reward_config = reward_config or get_reward_config()
+        self.terminate_on_coverage = terminate_on_coverage or self.config.get(
+            "terminate_on_coverage", False
+        )
+        self.target_coverage = float(self.config.get("target_coverage", 0.95))
+        self._coverage_bonus_awarded = False
+        self.reward_engine = RewardEngine(self.reward_config)
 
         grid_size = size or self.config.get("size", 17)
         max_episode_steps = max_steps or self.config.get("max_steps", 250)
@@ -89,6 +99,8 @@ class ExploreEnv(MiniGridEnv):
     def reset(self, *args, **kwargs):
         """Reset environment and initialize initial step-0 visibility tracking."""
         obs, info = super().reset(*args, **kwargs)
+        self.reward_engine.reset()
+        self._coverage_bonus_awarded = False
         # Process initial step-0 field of view
         top_x, top_y, _, _ = self.get_view_exts()
         _, vis_mask = self.gen_obs_grid()
@@ -216,16 +228,39 @@ class ExploreEnv(MiniGridEnv):
             agent_view_size=self.agent_view_size,
         )
 
-        # 5. Check termination conditions (strictly death or timeout; no privileged coverage stop)
+        curr_revealed_cov = self.tracker.revealed_coverage
+        coverage_done = False
+        if not self._coverage_bonus_awarded and curr_revealed_cov >= self.target_coverage:
+            coverage_done = True
+            self._coverage_bonus_awarded = True
+
+        # 5. Check termination conditions (strictly death > coverage > timeout)
         end_reason = None
         if collision:
             terminated = True
             end_reason = "death"
+        elif self.terminate_on_coverage and coverage_done:
+            terminated = True
+            end_reason = "coverage"
         elif self.step_count >= self.max_steps:
             truncated = True
             end_reason = "timeout"
 
-        # 6. Generate observation and diagnostic info
+        # 6. Compute step reward and diagnostic telemetry
+        reward, reward_breakdown = self.reward_engine.compute_reward(
+            agent_pos=self.agent_pos,
+            agent_dir=self.agent_dir,
+            delta_revealed=delta_revealed,
+            delta_pois=delta_pois,
+            bump=bump,
+            terminated=terminated,
+            end_reason=end_reason,
+            step_count=self.step_count,
+            max_steps=self.max_steps,
+            coverage_done=coverage_done,
+        )
+
+        # 7. Generate observation and diagnostic info
         obs = self.gen_obs()
 
         info: dict[str, Any] = {
@@ -234,6 +269,7 @@ class ExploreEnv(MiniGridEnv):
             "step_count": self.step_count,
             "delta_revealed": delta_revealed,
             "delta_pois": delta_pois,
+            "reward_breakdown": reward_breakdown,
             "monsters": [
                 {"id": m.id, "pos": m.pos, "state": m.state}
                 for m in self.monsters
