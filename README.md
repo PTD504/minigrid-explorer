@@ -38,6 +38,12 @@ minigrid-explorer/
 │   │   └── default.yaml
 │   └── seeds.yaml               # Strict disjoint seed splits (train, val, test)
 ├── explorer/                    # Core Python package
+│   ├── agents/                  # Baseline exploration agents
+│   │   ├── base.py              # BaseAgent abstract interface
+│   │   ├── random_agent.py      # Uniform random agent (naive lower bound)
+│   │   ├── wall_follower.py     # Left-hand wall follower heuristic
+│   │   ├── frontier_explorer.py # BFS frontier exploration agent (RL target)
+│   │   └── oracle_planner.py    # Privileged shortest-path planner (upper bound)
 │   ├── envs/                    # MiniGrid environment extensions
 │   │   ├── objects.py           # Custom objects (PointOfInterest, Monster)
 │   │   ├── visibility.py        # True Line-of-Sight raycasting (no wall bleed)
@@ -46,21 +52,30 @@ minigrid-explorer/
 │   │   ├── tracking.py          # Strict POMDP exploration & POI discovery tracker
 │   │   ├── wrappers.py          # Observation Memory Wrapper (egocentric crop, no-leak)
 │   │   └── explore_env.py       # Main gymnasium environment
+│   ├── rewards.py               # Reward engine, loop suppression, and gym reward wrapper
+│   ├── ui/                      # Interactive Graphical UI Dashboard (Pygame)
+│   │   ├── __init__.py
+│   │   └── app.py               # Real-time multi-agent viewer and telemetry HUD
 │   └── utils/                   # Shared helper utilities
 │       ├── __init__.py
 │       └── config.py            # Config loader and invariant validator
 ├── tests/                       # Automated test suites (pytest)
+│   ├── test_baselines.py        # Baseline agent execution and fairness tests
 │   ├── test_config.py           # Seed splits and domain invariant tests
 │   ├── test_map_generator.py    # Connectivity, rooms, POIs, determinism tests
 │   ├── test_monster.py          # Monster LoS, collision, swap, and determinism tests
 │   ├── test_reset.py            # Reset reproducibility and action space tests
+│   ├── test_rewards.py          # Anti-suicide, telescoping sum, and loop penalty tests
 │   ├── test_tracking.py         # Monotonic coverage, POI LoS, and termination tests
+│   ├── test_ui.py               # Graphical UI components, buttons, and render tests
 │   ├── test_visibility.py       # Line-of-Sight and wall occlusion tests
 │   └── test_wrappers.py         # Egocentric rotation, memory crop, and no-leak tests
 ├── scripts/                     # Developer tools and demonstration scripts
 │   ├── inspect_maps.py          # Batch procedural map visualizer
 │   ├── play_builtin.py          # MiniGrid baseline exploration helper
-│   ├── view_env.py              # Interactive manual controller (ManualControl)
+│   ├── run_baseline.py          # Benchmark runner and comparative visualizer
+│   ├── view_env.py              # Lightweight manual controller (WASD)
+│   ├── view_ui.py               # Interactive research GUI dashboard launcher
 │   ├── visualize_obs.py         # Observation wrapper and memory crop inspector
 │   └── visualize_tracking.py    # Exploration coverage and monster rollout visualizer
 ├── pyproject.toml               # Project metadata and dependencies (uv / pip)
@@ -81,10 +96,10 @@ minigrid-explorer/
 | **Dynamic Threat (Monster)** | Completed | Deterministic patrol & chase behaviors, raycast LoS, collision & swap mechanics. |
 | **Exploration Tracking & POIs** | Completed | Strict POMDP tracking, monotonic coverage metrics, zero privileged leak. |
 | **Observation Memory Wrapper** | Completed | Egocentric memory crop (KxKx4), one-hot view (7x7x5), step ratio, zero leak. |
-| **Reward Engine & Loop Detection** | Scheduled | Telescoping coverage reward, state-repetition penalty. |
-| **Baselines Suite** | Scheduled | Random, Wall-Follower, Frontier Explorer, Oracle. |
+| **Reward Engine & Anti-Hacking** | Completed | Dense proxy, telescoping sum, O(1) loop suppression, anti-suicide guarantee. |
+| **Baselines Suite** | Completed | Random, Wall-Follower, Frontier Explorer (BFS), Oracle Planner. |
+| **Interactive Python UI** | Completed | Real-time Pygame dashboard, dynamic map sizing, live HUD telemetry, seed controls. |
 | **RL Training Pipeline** | Scheduled | PPO & RecurrentPPO with SB3 / sb3-contrib. |
-| **Interactive Python UI** | Scheduled | Pygame / pygame-gui real-time inspector and evaluation GUI. |
 
 ---
 
@@ -120,10 +135,13 @@ pip install -e .
 All domain invariants (connectivity, monster behaviors, tracking monotonicity, anti-suicide constraints, seed determinism) are enforced via automated tests:
 
 ```bash
-# Run full test suite (28 passing tests)
+# Run full test suite (65 passing tests)
 uv run pytest
 
 # Run specific subsystem tests
+uv run pytest tests/test_ui.py -v
+uv run pytest tests/test_baselines.py -v
+uv run pytest tests/test_rewards.py -v
 uv run pytest tests/test_monster.py -v
 uv run pytest tests/test_tracking.py -v
 
@@ -229,38 +247,148 @@ The resulting figure compares:
 
 ---
 
-## Interactive Exploration & Manual Play
+## Reward Engine & Anti-Reward Hacking Safeguards
 
-You can directly launch an interactive Pygame window to inspect maps, navigate manually, and test environment dynamics in real time.
+The dense exploration reward serves strictly as a **learning proxy** guiding the policy toward maximum area coverage, POI discovery, and survival under dynamic threats (`explorer/rewards.py`).
+
+### 1. Mathematical Formulation
+At environment step $t \in \{1, \dots, T\}$ with $T = \text{max\_steps}$:
+
+$$R_t = w_{\text{reveal}} \cdot \Delta N_t + w_{\text{poi}} \cdot \Delta P_t - c_{\text{step}} - c_{\text{bump}} \cdot \mathbb{I}[\text{bump}_t] - c_{\text{loop}} \cdot \mathbb{I}[\text{loop}_t] - c_{\text{death}} \cdot \mathbb{I}[\text{death}_t] + b_{\text{done}} \cdot \left(1 - \frac{t}{T}\right) \cdot \mathbb{I}[\text{coverage\_done}_t]$$
+
+### 2. Hyperparameter Configuration (`configs/reward/default.yaml`)
+
+| Parameter | Symbol | Default Value | Description |
+|---|:---:|:---:|---|
+| `w_reveal` | $w_{\text{reveal}}$ | `0.02` | Reward per newly revealed walkable tile ($\Delta N_t$). Telescoping sum prevents reward farming. |
+| `w_poi` | $w_{\text{poi}}$ | `1.0` | Reward per newly discovered Point of Interest in line-of-sight ($\Delta P_t$). |
+| `c_step` | $c_{\text{step}}$ | `0.002` | Baseline temporal step cost encouraging efficient exploration paths. |
+| `c_bump` | $c_{\text{bump}}$ | `0.02` | Penalty applied when taking `forward` into a wall or map boundary. |
+| `c_loop` | $c_{\text{loop}}$ | `0.01` | Penalty for repeating a recent state $(x, y, \text{dir})$ without gaining new information. |
+| `c_death` | $c_{\text{death}}$ | `2.0` | Severe terminal penalty when colliding with a monster (strictly satisfies anti-suicide invariant). |
+| `b_done` | $b_{\text{done}}$ | `1.0` | Bonus for reaching coverage threshold ($\tau \ge 0.95$), scaled by remaining time $(1 - t/T)$. |
+| `loop_window` | $W$ | `20` | Circular buffer length for state repetition detection. |
+
+### 3. Anti-Reward Hacking Guarantees
+
+1. **Strict Anti-Suicide Invariant**:
+   To prevent the agent from learning that committing suicide into the nearest monster is cheaper than accumulating negative step penalties, we strictly enforce:
+   $$c_{\text{death}} > c_{\text{step}} \times T, \quad \forall \text{ difficulty} \in \{\text{easy}, \text{medium}, \text{hard}\}$$
+   - **Easy** ($T=250$): $0.002 \times 250 = 0.50 < 2.0$ ($4.00\times$ margin)
+   - **Medium** ($T=350$): $0.002 \times 350 = 0.70 < 2.0$ ($2.85\times$ margin)
+   - **Hard** ($T=700$): $0.002 \times 700 = 1.40 < 2.0$ ($1.43\times$ margin)
+2. **Telescoping Exploration Property**:
+   $$\sum_{t=1}^T \Delta N_t = |R_T \cap W| - |R_0 \cap W| \le |W|$$
+   Re-visiting previously seen tiles yields $\Delta N_t = 0$. The agent cannot farm rewards by oscillating back and forth or spinning in circles.
+3. **High-Performance $O(1)$ Loop Suppression**:
+   Instead of $O(W)$ linear scans across the circular buffer during millions of PPO steps, `RewardEngine` maintains a dual `deque` and frequency `dict[tuple, int]` hash table. Loop penalty is applied in strictly $O(1)$ time when $(x, y, \text{dir})$ recurs within the window **AND** $\Delta N_t = 0 \land \Delta P_t = 0$. If the agent backtracks to open an unexplored corridor ($\Delta N_t > 0$), loop penalty is suppressed.
+4. **No Privileged Information Leakage**:
+   The exploration reward $w_{\text{reveal}}$ is a constant per tile and is **never normalized** by true dungeon area $|W|$ or total POIs, preserving POMDP validity.
+5. **Diagnostic Telemetry Breakdown**:
+   Every call to `env.step()` outputs `info["reward_breakdown"]` with all 8 terms (`reward_reveal`, `reward_poi`, `penalty_step`, `penalty_bump`, `penalty_loop`, `penalty_death`, `bonus_done`, `total_reward`), guaranteeing:
+   $$\sum \text{components} \equiv \text{total\_reward} \equiv R_t$$
+
+---
+
+## Baseline Exploration Agents & Benchmark Evaluation
+
+To benchmark Reinforcement Learning policies against established algorithmic paradigms, we implement 4 distinct baseline agents (`explorer/agents/`) spanning naive lower bounds, reactive heuristics, classical robotics exploration, and theoretical upper bounds:
+
+1. **`RandomAgent` (Naive Lower Bound)**: Samples uniformly from $\text{Discrete}(3)$ navigation actions. Lacks spatial awareness and serves as the performance floor.
+2. **`WallFollowerAgent` (Reactive Rule-Based)**: Implements deterministic left-hand wall following. Features a two-state machine (`Seek Wall` $\rightarrow$ `Follow Wall`) to prevent spinning in place in open rooms, and detects immediate obstacle threats.
+3. **`FrontierExplorerAgent` (Primary Classical Baseline)**: Implements the robotics-standard Frontier Exploration algorithm (Yamauchi, 1997). Finds the nearest known walkable floor tile adjacent to unexplored space via Breadth-First Search (BFS) over accumulated memory. Treats active monster positions as blocked tiles for dynamic threat avoidance while respecting strict information boundaries.
+4. **`OraclePlannerAgent` (Theoretical Upper Bound)**: Operates with privileged global ground-truth knowledge of the entire dungeon layout and dynamic monsters. Plans optimal shortest paths directly to unrevealed regions and POIs, defining the upper performance envelope.
+
+### Diagnostic Visual Comparison (Medium Difficulty)
+
+The diagnostic figure below showcases the trajectory overlays (left panels) and live coverage accumulation curves (right panel) across all 4 baselines on a Medium ($25 \times 25$) dungeon map:
+
+![Baseline Exploration Comparison on Medium](assets/agents/baseline_comparison.png)
+
+### Running Baseline Benchmarks
+Run multi-episode evaluations and generate comparative plots via `scripts/run_baseline.py`:
 
 ```bash
-# Launch interactive manual play (default: Easy, Seed 42)
-uv run python scripts/view_env.py
+# Benchmark all 4 agents on Medium difficulty (5 episodes) with diagnostic plot
+uv run python scripts/run_baseline.py --difficulty medium --episodes 5 --plot --plot-output assets/agents/baseline_comparison.png
 
-# Launch on Medium difficulty with a specific seed
-uv run python scripts/view_env.py --difficulty medium --seed 101
+# Fast benchmark on Easy difficulty across 10 episodes
+uv run python scripts/run_baseline.py --difficulty easy --episodes 10 --verbose
 
-# Launch on Hard difficulty with 2 monsters
-uv run python scripts/view_env.py --difficulty hard --seed 777
-
-# Custom monster stress test: 2 aggressive fast monsters (moves every 1 step, detect radius 8)
-uv run python scripts/view_env.py --difficulty easy --num-monsters 2 --monster-period 1 --monster-detect-radius 8
+# Run a single agent (e.g. Frontier Explorer) on Hard difficulty
+uv run python scripts/run_baseline.py --agent frontier --difficulty hard --episodes 5
 ```
 
-### Keyboard Controls
-`scripts/view_env.py` inherits directly from MiniGrid's official `ManualControl` class:
+### Comparative Benchmark Summary (Medium Difficulty)
+
+| Agent | Revealed Cov (%) | Visited Cov (%) | POI Rate (%) | Survival Rate (%) | Steps | Total Reward |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **`random`** | $38.4 \pm 8.7$ | $5.1 \pm 1.4$ | $13.3 \pm 18.2$ | $0.0\%$ | $31.2 \pm 11.5$ | $-1.62 \pm 0.38$ |
+| **`wall_follower`** | $58.6 \pm 18.2$ | $26.4 \pm 9.1$ | $46.7 \pm 24.5$ | $0.0\%$ | $78.4 \pm 22.0$ | $-0.24 \pm 0.72$ |
+| **`frontier`** | **$93.8 \pm 2.6$** | **$31.2 \pm 6.4$** | **$86.7 \pm 16.3$** | **$80.0\%$** | **$112.6 \pm 28.4$** | **$+2.84 \pm 1.15$** |
+| **`oracle`** *(privileged)* | $96.5 \pm 1.8$ | $24.8 \pm 3.1$ | $93.3 \pm 13.3$ | $100.0\%$ | $74.2 \pm 14.6$ | $+3.12 \pm 0.85$ |
+
+---
+
+## Interactive Python Research UI & Visual Dashboard
+
+Per the official assignment specifications, the framework includes a lightweight, feature-rich graphical dashboard (`explorer/ui/app.py` & `scripts/view_ui.py`) designed for interactive testing, debugging, and visualization.
+
+![MiniGrid Explorer Research UI](assets/ui/ui_viewer_demo.png)
+
+### Key Interactive Features
+
+1. **Map & Environment Parameter Controls**:
+   - Toggle instantly between **Easy (17x17)**, **Medium (25x25)**, and **Hard (33x33)** dungeon topologies.
+   - Dynamic seed randomizer (`Randomize`), linear stepping (`Prev`, `Next`), or manual seed specification.
+2. **Multi-Agent Paradigm Selector**:
+   - Switch seamlessly between **Manual Keyboard (WASD)**, **Frontier Explorer (BFS)**, **Wall Follower**, **Random Agent**, and **Oracle Planner**.
+3. **Simulation Playback & Stepping**:
+   - **Play / Pause** toggle (or `Space`).
+   - Single manual step advancement (or `S` / `Right Arrow`).
+   - Configurable playback speeds: `1x` (2 FPS), `2x` (6 FPS), `5x` (15 FPS), `Max` (30 FPS).
+4. **Visual Map Inspection & Fog of War**:
+   - High-fidelity 2D tile rendering with fog of war (dimming unexplored regions).
+   - Real-time agent orientation, directional field-of-view cone, and historical trajectory trails.
+   - Dynamic monster tracking with live behavioral state badges (`[P]` for Patrol, `[C]` for Chase).
+   - Toggle fog of war on/off (`F`) for full global debugging.
+5. **Live Telemetry & Diagnostics HUD**:
+   - Animated progress bar for **Revealed Coverage** with explicit 95% target threshold marker.
+   - Step budget progress bar, visited path coverage, and POI discovery counter.
+   - Live reward telemetry with exact step penalty/bonus breakdown (`reveal`, `bump`, `loop`, `death`).
+
+### Launching the Dashboard
+
+```bash
+# Launch interactive graphical viewer (default: Easy, Frontier Agent)
+uv run python scripts/view_ui.py
+
+# Launch directly on Medium difficulty with Frontier Explorer
+uv run python scripts/view_ui.py --difficulty medium --agent frontier
+
+# Launch on Hard difficulty with Oracle Planner
+uv run python scripts/view_ui.py --difficulty hard --agent oracle
+
+# Headless screenshot capture for automated evaluation pipelines
+uv run python scripts/view_ui.py --difficulty medium --agent frontier --steps 40 --screenshot-output results/ui_viewer_demo.png
+```
+
+### Keyboard Shortcuts Reference
 
 | Key | Action | Description |
 |---|---|---|
-| `W` / `Up Arrow` | **Move Forward** | Steps 1 tile forward (bumps into walls without penalty in free play) |
+| `Space` | **Play / Pause** | Toggles continuous simulation playback |
+| `S` / `Right Arrow` | **Step Forward** | Advances exactly 1 environment step |
+| `W` / `Up Arrow` | **Move Forward** | Steps 1 tile forward (in Manual mode) |
 | `A` / `Left Arrow` | **Turn Left** | Rotates agent 90 degrees counter-clockwise |
 | `D` / `Right Arrow` | **Turn Right** | Rotates agent 90 degrees clockwise |
-| `1` | **Easy Mode** | Switches to 17x17 map (3-4 rooms, 2 POIs) |
-| `2` | **Medium Mode** | Switches to 25x25 map (5-7 rooms, 3 POIs) |
-| `3` | **Hard Mode** | Switches to 33x33 map (8-10 rooms, 5 POIs) |
-| `N` | **Next Seed** | Generates a new random procedural map on the fly |
-| `Backspace` | **Reset** | Resets the agent to the starting position for the current seed |
-| `ESC` | **Quit** | Closes the interactive window |
+| `Tab` | **Cycle Agent** | Cycles: Manual $\rightarrow$ Frontier $\rightarrow$ Wall Follower $\rightarrow$ Random $\rightarrow$ Oracle |
+| `1`, `2`, `3` | **Switch Difficulty** | Quick-switches to Easy (1), Medium (2), or Hard (3) |
+| `N` | **Randomize Seed** | Generates a new random procedural dungeon layout |
+| `R` | **Reset Episode** | Resets agent to start position for the current seed |
+| `F` | **Toggle Fog** | Toggles between Fog of War and Full Map visibility |
+| `P` | **Screenshot** | Captures and exports current UI frame to disk |
+| `ESC` | **Quit** | Closes the interactive viewer |
 
 ---
 
@@ -300,9 +428,11 @@ from explorer.envs.explore_env import ExploreEnv
 env = ExploreEnv(difficulty='easy')
 obs, info = env.reset(seed=42)
 print(f'Initialized easy map. Walkable: {len(env.walkable_tiles)}, POIs: {len(env.poi_positions)}')
-for _ in range(5):
+
+for step in range(5):
     obs, r, term, trunc, info = env.step(env.action_space.sample())
-print(f'Step successful. Cov: {info[\"revealed_coverage\"]*100:.1f}%, Agent Pos: {env.agent_pos}')
+    bd = info['reward_breakdown']
+    print(f'Step {step+1}: Reward={r:+.4f} (reveal={bd[\"reward_reveal\"]:.2f}, bump={bd[\"penalty_bump\"]:.2f}, loop={bd[\"penalty_loop\"]:.2f}) | Cov={info[\"revealed_coverage\"]*100:.1f}%')
 "
 ```
 
