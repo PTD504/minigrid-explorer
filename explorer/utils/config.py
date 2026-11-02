@@ -37,6 +37,11 @@ def get_seeds_config() -> dict[str, Any]:
     return load_yaml("seeds.yaml")
 
 
+def get_train_config(config_name: str = "ppo") -> dict[str, Any]:
+    """Load training configuration."""
+    return load_yaml(f"train/{config_name}.yaml")
+
+
 def validate_config_invariants(env_config: dict[str, Any], reward_config: dict[str, Any]) -> None:
     """Validate critical domain invariants.
     

@@ -23,6 +23,7 @@ dependencies = [
     "tensorboard>=2.21.0",
     "torch==2.13.0",
     "torchvision==0.28.0",
+    "wandb>=0.31.0",
 ]
 
 [tool.pytest.ini_options]

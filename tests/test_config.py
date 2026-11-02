@@ -3,6 +3,7 @@ from explorer.utils.config import (
     get_obs_config,
     get_reward_config,
     get_seeds_config,
+    get_train_config,
     validate_config_invariants,
     validate_seed_splits,
 )
@@ -28,3 +29,13 @@ def test_anti_suicide_invariant_all_difficulties():
     for diff in ["easy", "medium", "hard"]:
         env_cfg = get_env_config(diff)
         validate_config_invariants(env_cfg, reward_cfg)
+
+
+def test_train_config_loaded():
+    """Verify default ppo train config loads expected fields."""
+    train_cfg = get_train_config("ppo")
+    assert train_cfg.get("algo") == "ppo"
+    assert "learning_rate" in train_cfg
+    assert "n_steps" in train_cfg
+    assert "batch_size" in train_cfg
+    assert "n_envs" in train_cfg
