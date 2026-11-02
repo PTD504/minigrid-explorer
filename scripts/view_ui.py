@@ -5,6 +5,7 @@ Usage:
     uv run python scripts/view_ui.py
     uv run python scripts/view_ui.py --difficulty medium --agent frontier
     uv run python scripts/view_ui.py --difficulty hard --seed 42 --agent oracle
+    uv run python scripts/view_ui.py --checkpoint results/checkpoints/ppo_easy_seed100/best_model.zip
 """
 
 from __future__ import annotations

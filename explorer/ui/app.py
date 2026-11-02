@@ -18,6 +18,7 @@ from explorer.agents import (
     FrontierExplorerAgent,
     OraclePlannerAgent,
     RandomAgent,
+    RLAgent,
     WallFollowerAgent,
 )
 from explorer.envs.explore_env import ExploreEnv
@@ -50,6 +51,30 @@ COLOR_POI = (168, 85, 247)
 COLOR_PATH = (56, 189, 248)
 
 SPEED_LEVELS = [2, 6, 15, 30]
+
+
+def find_default_checkpoint() -> Path | None:
+    """Find the best or latest available model checkpoint in results/checkpoints."""
+    ckpt_root = ROOT_DIR / "results" / "checkpoints"
+    if not ckpt_root.exists():
+        return None
+
+    # Priority 1: Check for any best_model.zip
+    best_models = sorted(ckpt_root.glob("**/best_model.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if best_models:
+        return best_models[0]
+
+    # Priority 2: Check for any final_model.zip
+    final_models = sorted(ckpt_root.glob("**/final_model.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if final_models:
+        return final_models[0]
+
+    # Priority 3: Any latest *.zip
+    all_zips = sorted(ckpt_root.glob("**/*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if all_zips:
+        return all_zips[0]
+
+    return None
 
 
 class Button:
@@ -103,6 +128,7 @@ class ExplorerUIApp:
         difficulty: str = "easy",
         seed: int = 1000000,
         agent_type: str = "frontier",
+        checkpoint_path: str | Path | None = None,
         width: int = 1260,
         height: int = 840,
         headless: bool = False,
@@ -110,6 +136,14 @@ class ExplorerUIApp:
         self.difficulty = difficulty
         self.seed = seed
         self.agent_type = agent_type
+        if checkpoint_path is not None:
+            self.checkpoint_path: Path | None = Path(checkpoint_path)
+        else:
+            self.checkpoint_path = find_default_checkpoint()
+
+        if checkpoint_path is not None and agent_type == "frontier":
+            self.agent_type = "rl"
+
         self.window_w = width
         self.window_h = height
         self.headless = headless
@@ -182,6 +216,7 @@ class ExplorerUIApp:
             ("wall_follower", "Wall Follower"),
             ("random", "Random"),
             ("oracle", "Oracle (Upper)"),
+            ("rl", "RL Model (Policy)"),
         ]
         aw = 205
         for i, (a_key, label) in enumerate(agents):
@@ -261,6 +296,21 @@ class ExplorerUIApp:
             self.agent = FrontierExplorerAgent(self.env)
         elif self.agent_type == "oracle":
             self.agent = OraclePlannerAgent(self.env)
+        elif self.agent_type == "rl":
+            if (
+                isinstance(self.agent, RLAgent)
+                and self.checkpoint_path is not None
+                and self.agent.checkpoint_path == self.checkpoint_path
+            ):
+                self.agent.reset()
+            elif self.checkpoint_path is not None and self.checkpoint_path.exists():
+                try:
+                    self.agent = RLAgent(checkpoint_path=self.checkpoint_path)
+                except (ValueError, TypeError, RuntimeError, OSError) as exc:
+                    print(f"Warning: Failed to load RL checkpoint '{self.checkpoint_path}': {exc}")
+                    self.agent = None
+            else:
+                self.agent = None
         else:
             self.agent = None  # Manual WASD control
 
@@ -318,9 +368,11 @@ class ExplorerUIApp:
                     self.reset_env(self.seed, "hard")
                 elif event.key == pygame.K_TAB:
                     # Cycle agent
-                    agent_keys = ["manual", "frontier", "wall_follower", "random", "oracle"]
+                    agent_keys = ["manual", "frontier", "wall_follower", "random", "oracle", "rl"]
                     nxt_idx = (agent_keys.index(self.agent_type) + 1) % len(agent_keys)
                     self.agent_type = agent_keys[nxt_idx]
+                    if self.agent_type == "rl" and (self.checkpoint_path is None or not self.checkpoint_path.exists()):
+                        self.checkpoint_path = find_default_checkpoint()
                     self._init_agent()
                     self._sync_button_states()
                 elif event.key == pygame.K_f:
@@ -343,6 +395,8 @@ class ExplorerUIApp:
             self.reset_env(self.seed, d)
         elif tag.startswith("agent_"):
             self.agent_type = tag.replace("agent_", "")
+            if self.agent_type == "rl" and (self.checkpoint_path is None or not self.checkpoint_path.exists()):
+                self.checkpoint_path = find_default_checkpoint()
             self._init_agent()
             self._sync_button_states()
         elif tag == "ctrl_play":
@@ -481,6 +535,14 @@ class ExplorerUIApp:
 
         # Footer badge on map viewport
         mode_text = f"Difficulty: {self.difficulty.upper()} | Seed: {self.seed} | Grid: {grid_sz}x{grid_sz} | Fog: {'ON' if self.show_fog else 'OFF'} (Press F)"
+        if self.agent_type == "rl":
+            if self.checkpoint_path:
+                ckpt_name = self.checkpoint_path.name
+                is_rec = getattr(self.agent, "is_recurrent", False)
+                rec_str = "RecurrentPPO" if is_rec else "PPO"
+                mode_text += f" | RL: {ckpt_name} ({rec_str})"
+            else:
+                mode_text += " | RL: No Checkpoint"
         lbl = self.font_mono.render(mode_text, True, COLOR_TEXT_MUTED)
         self.screen.blit(lbl, (vx + 15, vy + viewport_h - 22))
 
@@ -525,7 +587,15 @@ class ExplorerUIApp:
         self.screen.blit(seed_lbl, (sx, 148))
 
         # Card 3: Agent Paradigm Selection
-        self._draw_section_header("2. Exploration Agent", sx, 218)
+        agent_header = "2. Exploration Agent"
+        if self.agent_type == "rl":
+            if self.checkpoint_path and self.agent is not None:
+                is_rec = getattr(self.agent, "is_recurrent", False)
+                rec_str = "RecurrentPPO" if is_rec else "PPO"
+                agent_header += f" [{rec_str}]"
+            else:
+                agent_header += " [No Checkpoint]"
+        self._draw_section_header(agent_header, sx, 218)
 
         # Card 4: Playback Controls
         self._draw_section_header("3. Simulation Playback", sx, 354)
@@ -705,7 +775,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Interactive Python UI Viewer for MiniGrid Explorer.")
     parser.add_argument("--difficulty", type=str, default="easy", choices=["easy", "medium", "hard"])
     parser.add_argument("--seed", type=int, default=1000000)
-    parser.add_argument("--agent", type=str, default="frontier", choices=["manual", "frontier", "wall_follower", "random", "oracle"])
+    parser.add_argument(
+        "--agent",
+        type=str,
+        default=None,
+        choices=["manual", "frontier", "wall_follower", "random", "oracle", "rl"],
+        help="Initial agent type (defaults to 'rl' if --checkpoint provided, else 'frontier')",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Path to trained RL checkpoint (.zip) for RLAgent evaluation",
+    )
     parser.add_argument("--steps", type=int, default=None, help="Auto-run N steps then hold or exit")
     parser.add_argument("--headless", action="store_true", help="Run with dummy display driver")
     parser.add_argument("--screenshot-output", type=str, default=None, help="Save screenshot and exit")
@@ -717,10 +799,16 @@ def main() -> None:
         import os
         os.environ["SDL_VIDEODRIVER"] = "dummy"
 
+    # Default agent type: 'rl' if checkpoint is explicitly passed, otherwise 'frontier' if not specified
+    agent_type = args.agent
+    if agent_type is None:
+        agent_type = "rl" if args.checkpoint is not None else "frontier"
+
     app = ExplorerUIApp(
         difficulty=args.difficulty,
         seed=args.seed,
-        agent_type=args.agent,
+        agent_type=agent_type,
+        checkpoint_path=args.checkpoint,
         headless=(args.headless or args.screenshot_output is not None),
     )
 

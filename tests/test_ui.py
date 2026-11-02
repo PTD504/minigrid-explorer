@@ -6,6 +6,10 @@ from pathlib import Path
 # Force dummy video driver for headless testing
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 
+from stable_baselines3 import PPO
+
+from explorer.agents.rl_agent import RLAgent
+from explorer.train import make_vec_env_dungeon
 from explorer.ui.app import ExplorerUIApp
 
 
@@ -93,4 +97,51 @@ def test_ui_app_render_and_screenshot(tmp_path: Path):
 
     assert out_file.exists()
     assert out_file.stat().st_size > 1000
+
+
+def test_ui_app_rl_agent_with_checkpoint(tmp_path: Path):
+    """Verify ExplorerUIApp loads trained RL model checkpoint and auto-steps."""
+    # Create a small dummy PPO model and save to disk
+    train_venv = make_vec_env_dungeon(difficulty="easy", n_envs=1, seed=42, use_memory=True)
+    model = PPO("MultiInputPolicy", train_venv, n_steps=8, batch_size=8, n_epochs=1, verbose=0)
+    model.learn(total_timesteps=8)
+    ckpt_path = tmp_path / "test_model.zip"
+    model.save(str(ckpt_path))
+    train_venv.close()
+
+    app = ExplorerUIApp(
+        difficulty="easy",
+        seed=42,
+        checkpoint_path=ckpt_path,
+        headless=True,
+    )
+
+    assert app.agent_type == "rl"
+    assert isinstance(app.agent, RLAgent)
+
+    # Step simulation with RL agent
+    initial_traj_len = len(app.trajectory)
+    app.step()
+    assert len(app.trajectory) == initial_traj_len + 1
+
+    # Render scene
+    app.render()
+
+
+def test_ui_app_rl_agent_missing_checkpoint():
+    """Verify ExplorerUIApp handles missing checkpoint gracefully without crashing."""
+    app = ExplorerUIApp(
+        difficulty="easy",
+        seed=42,
+        agent_type="rl",
+        checkpoint_path="/nonexistent/path/model.zip",
+        headless=True,
+    )
+    assert app.agent_type == "rl"
+    assert app.agent is None
+    # Step should be a no-op waiting for manual input or loaded model
+    traj_len = len(app.trajectory)
+    app.step()
+    assert len(app.trajectory) == traj_len
+    app.render()
 
