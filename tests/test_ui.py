@@ -10,7 +10,7 @@ from stable_baselines3 import PPO
 
 from explorer.agents.rl_agent import RLAgent
 from explorer.train import make_vec_env_dungeon
-from explorer.ui.app import ExplorerUIApp
+from explorer.ui.app import ExplorerUIApp, resolve_checkpoint_path
 
 
 def test_ui_app_initialization():
@@ -144,4 +144,48 @@ def test_ui_app_rl_agent_missing_checkpoint():
     app.step()
     assert len(app.trajectory) == traj_len
     app.render()
+
+
+def test_resolve_checkpoint_path_shortcuts():
+    """Verify resolve_checkpoint_path resolves aliases and directory paths."""
+    # Test shortcut aliases matching real checkpoints in results/checkpoints/
+    res_med = resolve_checkpoint_path("medium")
+    assert res_med is not None
+    assert "medium" in res_med.parent.name
+    assert res_med.suffix == ".zip"
+
+    res_easy = resolve_checkpoint_path("easy")
+    assert res_easy is not None
+    assert "easy" in res_easy.parent.name
+    assert "nomem" not in res_easy.parent.name
+
+    res_nomem = resolve_checkpoint_path("nomem")
+    assert res_nomem is not None
+    assert "nomem" in res_nomem.parent.name or "no-memory" in res_nomem.parent.name
+
+    res_rec = resolve_checkpoint_path("recurrent")
+    assert res_rec is not None
+    assert "recurrent" in res_rec.parent.name
+
+    # Test direct file path
+    assert resolve_checkpoint_path(res_med) == res_med.resolve()
+
+    # Test default fallback
+    assert resolve_checkpoint_path(None) is not None
+
+
+def test_ui_app_with_alias_checkpoint():
+    """Verify ExplorerUIApp initializes and steps using alias checkpoint string."""
+    app = ExplorerUIApp(
+        difficulty="medium",
+        seed=42,
+        checkpoint_path="medium",
+        headless=True,
+    )
+    assert app.agent_type == "rl"
+    assert isinstance(app.agent, RLAgent)
+    app.step()
+    assert len(app.trajectory) == 2
+    app.render()
+
 

@@ -77,6 +77,108 @@ def find_default_checkpoint() -> Path | None:
     return None
 
 
+def resolve_checkpoint_path(target: str | Path | None) -> Path | None:
+    """Resolve a checkpoint path or user shortcut alias to an existing .zip checkpoint file.
+
+    Supported shortcuts:
+      - None / empty: returns find_default_checkpoint()
+      - 'medium', 'med': best_model.zip from ppo-medium run
+      - 'easy': best_model.zip from ppo-easy (standard with memory)
+      - 'nomem', 'no-memory', 'nomemory', 'no_memory': best_model.zip from ppo-easy-no-memory
+      - 'recurrent', 'recurrent_ppo', 'lstm', 'rnn': best_model.zip from recurrent_ppo-easy
+      - Substring of directory name (e.g. '20261102_202400', 'full', etc.)
+      - Direct path to .zip file or directory containing best_model.zip / final_model.zip
+    """
+    if target is None:
+        return find_default_checkpoint()
+
+    raw_str = str(target).strip()
+    if not raw_str:
+        return find_default_checkpoint()
+
+    raw_path = Path(raw_str)
+    # 1. Direct file path
+    if raw_path.is_file() and raw_path.suffix == ".zip":
+        return raw_path.resolve()
+
+    # 2. Direct directory path
+    if raw_path.is_dir():
+        if (raw_path / "best_model.zip").is_file():
+            return (raw_path / "best_model.zip").resolve()
+        if (raw_path / "final_model.zip").is_file():
+            return (raw_path / "final_model.zip").resolve()
+        zips = sorted(raw_path.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if zips:
+            return zips[0].resolve()
+
+    # 3. Check within results/checkpoints
+    ckpt_root = ROOT_DIR / "results" / "checkpoints"
+    if not ckpt_root.exists():
+        return raw_path
+
+    # Check relative to results/checkpoints
+    rel_candidate = ckpt_root / raw_str
+    if rel_candidate.is_file() and rel_candidate.suffix == ".zip":
+        return rel_candidate.resolve()
+    if rel_candidate.is_dir():
+        if (rel_candidate / "best_model.zip").is_file():
+            return (rel_candidate / "best_model.zip").resolve()
+        if (rel_candidate / "final_model.zip").is_file():
+            return (rel_candidate / "final_model.zip").resolve()
+        zips = sorted(rel_candidate.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if zips:
+            return zips[0].resolve()
+
+    # 4. Keyword / Alias matching
+    keyword = raw_str.lower()
+    all_dirs = [d for d in ckpt_root.iterdir() if d.is_dir()]
+
+    matched_dirs: list[Path] = []
+    if keyword in ("medium", "med"):
+        matched_dirs = [d for d in all_dirs if "medium" in d.name.lower()]
+    elif keyword in ("nomem", "no-memory", "nomemory", "no_memory"):
+        matched_dirs = [
+            d for d in all_dirs
+            if "nomem" in d.name.lower() or "no-memory" in d.name.lower()
+        ]
+    elif keyword in ("recurrent", "recurrent_ppo", "lstm", "rnn"):
+        matched_dirs = [
+            d for d in all_dirs
+            if "recurrent" in d.name.lower() or "lstm" in d.name.lower()
+        ]
+    elif keyword == "easy":
+        matched_dirs = [
+            d for d in all_dirs
+            if "easy" in d.name.lower()
+            and "nomem" not in d.name.lower()
+            and "no-memory" not in d.name.lower()
+            and "recurrent" not in d.name.lower()
+        ]
+    else:
+        # Generic substring match against run folder name
+        matched_dirs = [d for d in all_dirs if keyword in d.name.lower()]
+
+    if matched_dirs:
+        # Sort by mtime descending (most recent first)
+        matched_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        best_dir = matched_dirs[0]
+        if (best_dir / "best_model.zip").is_file():
+            resolved = (best_dir / "best_model.zip").resolve()
+            print(f"[UI] Resolved checkpoint alias '{target}' -> {resolved}")
+            return resolved
+        if (best_dir / "final_model.zip").is_file():
+            resolved = (best_dir / "final_model.zip").resolve()
+            print(f"[UI] Resolved checkpoint alias '{target}' -> {resolved}")
+            return resolved
+        zips = sorted(best_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if zips:
+            resolved = zips[0].resolve()
+            print(f"[UI] Resolved checkpoint alias '{target}' -> {resolved}")
+            return resolved
+
+    return raw_path
+
+
 class Button:
     """Clickable UI button with active/inactive states."""
 
@@ -137,7 +239,7 @@ class ExplorerUIApp:
         self.seed = seed
         self.agent_type = agent_type
         if checkpoint_path is not None:
-            self.checkpoint_path: Path | None = Path(checkpoint_path)
+            self.checkpoint_path: Path | None = resolve_checkpoint_path(checkpoint_path)
         else:
             self.checkpoint_path = find_default_checkpoint()
 
@@ -232,15 +334,15 @@ class ExplorerUIApp:
 
         # Playback Control Buttons
         pw = 100
-        self.btn_play = Button(rect=(sx, 380, pw, 32), text="▶ Play", tag="ctrl_play", bg_color=(16, 185, 129))
+        self.btn_play = Button(rect=(sx, 402, pw, 32), text="▶ Play", tag="ctrl_play", bg_color=(16, 185, 129))
         self.buttons.append(self.btn_play)
-        self.buttons.append(Button(rect=(sx + pw + 10, 380, pw, 32), text="⏭ Step", tag="ctrl_step", bg_color=(56, 189, 248)))
-        self.buttons.append(Button(rect=(sx + 2 * (pw + 10), 380, pw, 32), text="↺ Restart", tag="ctrl_reset"))
+        self.buttons.append(Button(rect=(sx + pw + 10, 402, pw, 32), text="⏭ Step", tag="ctrl_step", bg_color=(56, 189, 248)))
+        self.buttons.append(Button(rect=(sx + 2 * (pw + 10), 402, pw, 32), text="↺ Restart", tag="ctrl_reset"))
 
         # Speed buttons
         for i, spd in enumerate(["1x", "2x", "5x", "Max"]):
             btn = Button(
-                rect=(sx + 340 + i * 21, 380, 19, 32),
+                rect=(sx + 340 + i * 21, 402, 19, 32),
                 text=str(spd[0]),
                 tag=f"speed_{i}",
                 active=(i == self.speed_idx),
@@ -322,7 +424,15 @@ class ExplorerUIApp:
         # If manual action is not specified, query autonomous agent
         if action is None:
             if self.agent is not None:
-                action = self.agent.act(self.obs, self.info)
+                if isinstance(self.agent, RLAgent) and hasattr(self.agent.model, "observation_space"):
+                    model_spaces = getattr(self.agent.model.observation_space, "spaces", None)
+                    if model_spaces is not None and "memory" not in model_spaces:
+                        agent_obs = {k: v for k, v in self.obs.items() if k in model_spaces}
+                        action = self.agent.act(agent_obs, self.info)
+                    else:
+                        action = self.agent.act(self.obs, self.info)
+                else:
+                    action = self.agent.act(self.obs, self.info)
             else:
                 return  # Waiting for manual key press
 
@@ -597,11 +707,27 @@ class ExplorerUIApp:
                 agent_header += " [No Checkpoint]"
         self._draw_section_header(agent_header, sx, 218)
 
+        # Active Model Info Badge
+        if self.agent_type == "rl":
+            if self.checkpoint_path and self.agent is not None:
+                run_tag = self.checkpoint_path.parent.name
+                file_tag = self.checkpoint_path.name
+                if len(run_tag) > 30:
+                    run_tag = run_tag[:27] + "..."
+                is_rec = getattr(self.agent, "is_recurrent", False)
+                rec_str = "RecurrentPPO" if is_rec else "PPO"
+                m_surf = self.font_mono.render(f"Model: {run_tag}/{file_tag} ({rec_str})", True, COLOR_CYAN_LIGHT)
+            elif self.checkpoint_path:
+                m_surf = self.font_mono.render(f"Model: {self.checkpoint_path.name} (Load Error)", True, COLOR_RED)
+            else:
+                m_surf = self.font_mono.render("Model: No Checkpoint Found", True, COLOR_TEXT_MUTED)
+            self.screen.blit(m_surf, (sx, 350))
+
         # Card 4: Playback Controls
-        self._draw_section_header("3. Simulation Playback", sx, 354)
+        self._draw_section_header("3. Simulation Playback", sx, 376)
 
         # Card 5: Real-time Telemetry Dashboard
-        self._draw_section_header("4. Live Episode Telemetry", sx, 430)
+        self._draw_section_header("4. Live Episode Telemetry", sx, 448)
 
         # Telemetry metrics
         cov_pct = self.info.get("revealed_coverage", 0.0) * 100.0
@@ -616,7 +742,7 @@ class ExplorerUIApp:
             label=f"Step Progress: {step_cur}/{step_max}",
             ratio=step_cur / max(1, step_max),
             x=sx,
-            y=460,
+            y=474,
             width=sw - 30,
             fill_color=COLOR_AMBER,
         )
@@ -626,20 +752,20 @@ class ExplorerUIApp:
             label=f"Revealed Coverage: {cov_pct:.1f}% (Target: 95%)",
             ratio=cov_pct / 100.0,
             x=sx,
-            y=505,
+            y=518,
             width=sw - 30,
             fill_color=COLOR_GREEN,
             target_mark=0.95,
         )
 
         # Compact Metric Grid
-        my = 550
+        my = 562
         self._draw_stat_box("Visited Path", f"{vis_pct:.1f}%", sx, my, 125)
         self._draw_stat_box("POI Discovery", f"{pois_found}/{pois_tot}", sx + 140, my, 125)
         self._draw_stat_box("Total Reward", f"{self.last_reward:+.3f}", sx + 280, my, 130)
 
         # Reward Breakdown - split into 2 lines so no metrics are clipped
-        my2 = 604
+        my2 = 616
         bd = self.last_breakdown
         gains_text = (
             f"Step Reward: rev={bd.get('reward_reveal', 0):+.2f} | "
@@ -654,20 +780,20 @@ class ExplorerUIApp:
         g_surf = self.font_mono.render(gains_text, True, COLOR_TEXT_MUTED)
         p_surf = self.font_mono.render(penalties_text, True, COLOR_TEXT_MUTED)
         self.screen.blit(g_surf, (sx, my2))
-        self.screen.blit(p_surf, (sx, my2 + 18))
+        self.screen.blit(p_surf, (sx, my2 + 16))
 
         # Monster Status
-        my3 = 644
+        my3 = 652
         m_info = []
         if self.raw_env:
             for m in self.raw_env.monsters:
-                m_info.append(f"M{m.id}@{m.pos} [{m.state.upper()}]")
+                m_info.append(f"M{m.id}@({int(m.pos[0])},{int(m.pos[1])}) [{m.state.upper()}]")
         m_str = " | ".join(m_info) if m_info else "None active"
         m_surf = self.font_mono.render(f"Monsters: {m_str}", True, (248, 113, 113))
         self.screen.blit(m_surf, (sx, my3))
 
         # Card 6: Keyboard Shortcuts Reference - 2 columns to prevent text overlap
-        self._draw_section_header("Hotkeys Reference", sx, 672)
+        self._draw_section_header("Hotkeys Reference", sx, 678)
         hotkeys = [
             ("Space", "Play / Pause"),
             ("Tab", "Cycle agent"),
@@ -680,13 +806,18 @@ class ExplorerUIApp:
             ("P", "Save Screenshot"),
             ("Esc / Q", "Quit viewer"),
         ]
-        hy = 698
+        hy = 702
         col_w = 205
         for i, (key, desc) in enumerate(hotkeys):
             col = i % 2
             row = i // 2
             kx = sx + col * col_w
             ky = hy + row * 20
+            k_tag = f"[{key}]"
+            k_surf = self.font_mono.render(k_tag, True, COLOR_CYAN_LIGHT)
+            d_surf = self.font_body.render(desc, True, COLOR_TEXT_SECONDARY)
+            self.screen.blit(k_surf, (kx, ky))
+            self.screen.blit(d_surf, (kx + k_surf.get_width() + 6, ky - 1))
             k_tag = f"[{key}]"
             k_surf = self.font_mono.render(k_tag, True, COLOR_CYAN_LIGHT)
             d_surf = self.font_body.render(desc, True, COLOR_TEXT_SECONDARY)
@@ -786,7 +917,10 @@ def main() -> None:
         "--checkpoint",
         type=str,
         default=None,
-        help="Path to trained RL checkpoint (.zip) for RLAgent evaluation",
+        help=(
+            "Path to trained RL checkpoint (.zip) or alias: 'medium', 'easy', "
+            "'nomem', 'recurrent', or directory substring"
+        ),
     )
     parser.add_argument("--steps", type=int, default=None, help="Auto-run N steps then hold or exit")
     parser.add_argument("--headless", action="store_true", help="Run with dummy display driver")
