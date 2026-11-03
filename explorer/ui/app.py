@@ -129,9 +129,27 @@ def resolve_checkpoint_path(target: str | Path | None) -> Path | None:
         if zips:
             return zips[0].resolve()
 
+    # Check if a folder component exists inside results/checkpoints (auto-corrects typos in prefixes like "resutls/checkpoints/...")
+    for part in raw_path.parts:
+        candidate_dir = ckpt_root / part
+        if candidate_dir.is_dir():
+            target_name = raw_path.name if raw_path.suffix == ".zip" else "best_model.zip"
+            if (candidate_dir / target_name).is_file():
+                resolved = (candidate_dir / target_name).resolve()
+                print(f"[UI] Auto-corrected checkpoint path '{target}' -> {resolved}")
+                return resolved
+            if (candidate_dir / "best_model.zip").is_file():
+                resolved = (candidate_dir / "best_model.zip").resolve()
+                print(f"[UI] Auto-corrected checkpoint path '{target}' -> {resolved}")
+                return resolved
+
     # 4. Keyword / Alias matching
-    keyword = raw_str.lower()
     all_dirs = [d for d in ckpt_root.iterdir() if d.is_dir()]
+    tokens = [p.lower() for p in raw_path.parts if p.lower() not in (".", "..", "results", "checkpoints", "resutls")]
+    keyword = tokens[-1] if tokens else raw_str.lower()
+    # Strip .zip from keyword if present
+    if keyword.endswith(".zip") and len(tokens) > 1:
+        keyword = tokens[-2]
 
     matched_dirs: list[Path] = []
     if keyword in ("medium", "med"):
@@ -176,6 +194,8 @@ def resolve_checkpoint_path(target: str | Path | None) -> Path | None:
             print(f"[UI] Resolved checkpoint alias '{target}' -> {resolved}")
             return resolved
 
+    if not raw_path.exists():
+        print(f"[UI] Warning: Checkpoint file not found: '{raw_str}'")
     return raw_path
 
 
@@ -717,6 +737,8 @@ class ExplorerUIApp:
                 is_rec = getattr(self.agent, "is_recurrent", False)
                 rec_str = "RecurrentPPO" if is_rec else "PPO"
                 m_surf = self.font_mono.render(f"Model: {run_tag}/{file_tag} ({rec_str})", True, COLOR_CYAN_LIGHT)
+            elif self.checkpoint_path and not self.checkpoint_path.exists():
+                m_surf = self.font_mono.render(f"Model: {self.checkpoint_path.name} (File Not Found)", True, COLOR_RED)
             elif self.checkpoint_path:
                 m_surf = self.font_mono.render(f"Model: {self.checkpoint_path.name} (Load Error)", True, COLOR_RED)
             else:
