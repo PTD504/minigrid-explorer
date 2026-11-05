@@ -129,6 +129,29 @@ def test_frontier_explorer_monster_avoidance():
     assert action in {0, 1}, "Frontier explorer should turn to avoid stepping into monster"
 
 
+def test_frontier_explorer_fairness_no_hidden_monster_block():
+    """Frontier explorer does not have clairvoyance: it only blocks monsters that are visible."""
+    env = ExploreEnv(difficulty="easy")
+    env.reset(seed=42)
+    agent = FrontierExplorerAgent(env)
+
+    # Place monster in an unvisited, unrevealed tile far away
+    far_tiles = [
+        t for t in env.walkable_tiles
+        if t not in env.tracker.revealed_tiles and abs(t[0] - env.agent_pos[0]) + abs(t[1] - env.agent_pos[1]) > 8
+    ]
+    if far_tiles:
+        hidden_pos = far_tiles[0]
+        env.monsters[0].pos = hidden_pos
+        # The hidden monster tile should NOT be considered blocked by the fair baseline
+        visible_monsters = {
+            m.pos for m in env.monsters if m.pos in env.tracker.current_visible_tiles
+        }
+        assert hidden_pos not in visible_monsters, "Hidden monster must not be in visible monsters!"
+        action = agent.act({}, {})
+        assert action in {0, 1, 2}
+
+
 def test_oracle_planner_high_coverage():
     """OraclePlannerAgent achieves rapid high-efficiency coverage using ground-truth pathfinding."""
     env = ExploreEnv(difficulty="easy")

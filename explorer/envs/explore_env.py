@@ -112,9 +112,15 @@ class ExploreEnv(MiniGridEnv):
             vis_mask=vis_mask,
             agent_view_size=self.agent_view_size,
         )
+        visible_monsters = [
+            {"id": m.id, "pos": m.pos, "state": m.state}
+            for m in self.monsters
+            if m.pos in self.tracker.current_visible_tiles
+        ]
         info.update({
             "delta_revealed": delta_rev,
             "delta_pois": delta_poi,
+            "monsters": visible_monsters,
             **self.tracker.get_eval_metrics(),
         })
         return obs, info
@@ -263,17 +269,30 @@ class ExploreEnv(MiniGridEnv):
         # 7. Generate observation and diagnostic info
         obs = self.gen_obs()
 
+        # Strict POMDP contract: Only expose monsters currently within agent's line-of-sight
+        visible_monsters = [
+            {"id": m.id, "pos": m.pos, "state": m.state}
+            for m in self.monsters
+            if m.pos in self.tracker.current_visible_tiles
+        ]
+
+        # Calculate threat proximity telemetry (Manhattan distance <= 2)
+        ax, ay = self.agent_pos
+        near_monster = any(abs(m.pos[0] - ax) + abs(m.pos[1] - ay) <= 1 for m in self.monsters)
+        near_monster_dist2 = any(abs(m.pos[0] - ax) + abs(m.pos[1] - ay) <= 2 for m in self.monsters)
+        is_loop = reward_breakdown.get("penalty_loop", 0.0) < 0.0
+
         info: dict[str, Any] = {
             "bump": bump,
+            "is_loop": is_loop,
+            "near_monster": near_monster,
+            "near_monster_dist2": near_monster_dist2,
             "end_reason": end_reason,
             "step_count": self.step_count,
             "delta_revealed": delta_revealed,
             "delta_pois": delta_pois,
             "reward_breakdown": reward_breakdown,
-            "monsters": [
-                {"id": m.id, "pos": m.pos, "state": m.state}
-                for m in self.monsters
-            ],
+            "monsters": visible_monsters,
             **self.tracker.get_eval_metrics(),
         }
 

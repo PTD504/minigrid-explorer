@@ -99,7 +99,7 @@ minigrid-explorer/
 | **Reward Engine & Anti-Hacking** | Completed | Dense proxy, telescoping sum, O(1) loop suppression, anti-suicide guarantee. |
 | **Baselines Suite** | Completed | Random, Wall-Follower, Frontier Explorer (BFS), Oracle Planner. |
 | **Interactive Python UI** | Completed | Real-time Pygame dashboard, dynamic map sizing, live HUD telemetry, seed controls. |
-| **RL Training Pipeline** | Scheduled | PPO & RecurrentPPO with SB3 / sb3-contrib. |
+| **RL Training Pipeline** | Completed | PPO & RecurrentPPO with SB3 / sb3-contrib, memory ablation, checkpoints. |
 
 ---
 
@@ -135,7 +135,7 @@ pip install -e .
 All domain invariants (connectivity, monster behaviors, tracking monotonicity, anti-suicide constraints, seed determinism) are enforced via automated tests:
 
 ```bash
-# Run full test suite (65 passing tests)
+# Run full test suite (94 passing tests)
 uv run pytest
 
 # Run specific subsystem tests

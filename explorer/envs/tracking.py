@@ -59,6 +59,7 @@ class ExplorationTracker:
         self.revealed_tiles: set[tuple[int, int]] = set()
         self.visited_tiles: set[tuple[int, int]] = set()
         self.discovered_pois: set[tuple[int, int]] = set()
+        self.current_visible_tiles: set[tuple[int, int]] = set()
 
     def reset(
         self,
@@ -74,6 +75,7 @@ class ExplorationTracker:
         self.revealed_tiles.clear()
         self.visited_tiles.clear()
         self.discovered_pois.clear()
+        self.current_visible_tiles.clear()
 
     def update(
         self,
@@ -110,6 +112,7 @@ class ExplorationTracker:
         w, h = vis_mask.shape
         step_revealed_walkable = 0
         step_discovered_pois = 0
+        self.current_visible_tiles.clear()
 
         for vx in range(w):
             for vy in range(h):
@@ -120,6 +123,7 @@ class ExplorationTracker:
                 world_x = top_x + int(rx)
                 world_y = top_y + int(ry)
                 world_pos = (world_x, world_y)
+                self.current_visible_tiles.add(world_pos)
 
                 # Track newly revealed tiles
                 if world_pos not in self.revealed_tiles:

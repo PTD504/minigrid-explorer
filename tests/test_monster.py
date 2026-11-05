@@ -178,3 +178,37 @@ def test_monster_in_observation_when_visible():
         monster_id = OBJECT_TO_IDX["monster"]
         assert np.any(img[:, :, 0] == monster_id), "Monster should be visible in observation!"
 
+
+def test_info_monsters_strict_pomdp_filtering():
+    """info['monsters'] must only expose monsters currently in the agent's visible FoV."""
+    env = ExploreEnv(difficulty="easy")
+    _obs, _info = env.reset(seed=42)
+
+    monster = env.monsters[0]
+
+    # Case 1: Place monster far away in an unrevealed corner behind walls
+    far_tiles = [
+        t for t in env.walkable_tiles
+        if abs(t[0] - env.agent_pos[0]) + abs(t[1] - env.agent_pos[1]) > 10
+    ]
+    if far_tiles:
+        monster.pos = far_tiles[0]
+        # Step in place (turn left)
+        _, _, _, _, step_info = env.step(0)
+        # Monster is outside FoV, info['monsters'] must be empty!
+        assert len(step_info["monsters"]) == 0, (
+            f"Hidden monster at {monster.pos} was leaked in info: {step_info['monsters']}"
+        )
+
+    # Case 2: Place monster directly 1 tile in front of agent
+    ax, ay = env.agent_pos
+    # Agent facing right (0)
+    env.agent_dir = 0
+    monster.pos = (ax + 1, ay)
+    _, _, _, _, step_info2 = env.step(0)
+    # Monster is visible in front of agent, so it must be present in step_info['monsters']
+    visible_monster_positions = [m["pos"] for m in step_info2["monsters"]]
+    assert monster.pos in visible_monster_positions, (
+        f"Visible monster at {monster.pos} was not reported in info: {step_info2['monsters']}"
+    )
+

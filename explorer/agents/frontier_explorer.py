@@ -110,8 +110,18 @@ class FrontierExplorerAgent(BaseAgent):
         revealed_tiles = set(unwrapped.tracker.revealed_tiles)
         known_walkable = revealed_tiles.intersection(unwrapped.walkable_tiles)
 
-        # Dynamic obstacles: monster positions are strictly blocked
-        blocked_tiles = {m.pos for m in unwrapped.monsters}
+        # Dynamic obstacles (Fair baseline POMDP rule):
+        # The agent only knows and blocks monster positions that are currently visible
+        visible_monsters: set[tuple[int, int]] = set()
+        if info is not None and "monsters" in info:
+            visible_monsters = {tuple(m["pos"]) for m in info["monsters"]}
+        elif hasattr(unwrapped, "tracker") and hasattr(unwrapped.tracker, "current_visible_tiles"):
+            visible_monsters = {
+                m.pos
+                for m in unwrapped.monsters
+                if m.pos in unwrapped.tracker.current_visible_tiles
+            }
+        blocked_tiles = visible_monsters
 
         path = self._find_closest_frontier(
             start_pos=agent_pos,
