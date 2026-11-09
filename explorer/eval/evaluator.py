@@ -13,6 +13,7 @@ from explorer.agents.base import BaseAgent
 from explorer.agents.rl_agent import RLAgent
 from explorer.envs.explore_env import ExploreEnv
 from explorer.envs.wrappers import ObservationMemoryWrapper
+from explorer.utils.config import get_split
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -111,7 +112,7 @@ def evaluate_single_agent(
 ) -> EvalResult:
     """Run comprehensive evaluation for an agent over a list of seeds."""
     if seeds is None:
-        seeds = [2_000_000 + i for i in range(100)]
+        seeds = list(get_split("test"))
 
     raw_coverages: list[float] = []
     raw_visited: list[float] = []

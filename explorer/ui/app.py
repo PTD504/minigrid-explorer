@@ -153,7 +153,24 @@ def resolve_checkpoint_path(target: str | Path | None) -> Path | None:
 
     matched_dirs: list[Path] = []
     if keyword in ("medium", "med"):
-        matched_dirs = [d for d in all_dirs if "medium" in d.name.lower()]
+        matched_dirs = [
+            d for d in all_dirs
+            if "medium" in d.name.lower()
+            and "nomem" not in d.name.lower()
+            and "no-memory" not in d.name.lower()
+        ]
+    elif keyword in ("nomem-medium", "nomem_medium", "nomem-med", "medium-nomem"):
+        matched_dirs = [
+            d for d in all_dirs
+            if "medium" in d.name.lower()
+            and ("nomem" in d.name.lower() or "no-memory" in d.name.lower())
+        ]
+    elif keyword in ("nomem-easy", "nomem_easy", "easy-nomem"):
+        matched_dirs = [
+            d for d in all_dirs
+            if "easy" in d.name.lower()
+            and ("nomem" in d.name.lower() or "no-memory" in d.name.lower())
+        ]
     elif keyword in ("nomem", "no-memory", "nomemory", "no_memory"):
         matched_dirs = [
             d for d in all_dirs
@@ -293,6 +310,8 @@ class ExplorerUIApp:
         self.speed_idx = 1  # 6 FPS default
         self.fps = SPEED_LEVELS[self.speed_idx]
         self.show_fog = True
+        self.is_done = False
+        self.final_end_reason: str | None = None
 
         # Environment & Agent
         self.raw_env: ExploreEnv | None = None
@@ -356,7 +375,8 @@ class ExplorerUIApp:
         pw = 100
         self.btn_play = Button(rect=(sx, 402, pw, 32), text="▶ Play", tag="ctrl_play", bg_color=(16, 185, 129))
         self.buttons.append(self.btn_play)
-        self.buttons.append(Button(rect=(sx + pw + 10, 402, pw, 32), text="⏭ Step", tag="ctrl_step", bg_color=(56, 189, 248)))
+        self.btn_step = Button(rect=(sx + pw + 10, 402, pw, 32), text="⏭ Step", tag="ctrl_step", bg_color=(56, 189, 248))
+        self.buttons.append(self.btn_step)
         self.buttons.append(Button(rect=(sx + 2 * (pw + 10), 402, pw, 32), text="↺ Restart", tag="ctrl_reset"))
 
         # Speed buttons
@@ -379,8 +399,16 @@ class ExplorerUIApp:
             elif btn.tag.startswith("speed_"):
                 btn.active = btn.tag == f"speed_{self.speed_idx}"
 
-        self.btn_play.text = "⏸ Pause" if self.is_playing else "▶ Play"
-        self.btn_play.custom_bg = (245, 158, 11) if self.is_playing else (16, 185, 129)
+        if self.is_done:
+            self.btn_play.text = "▶ Play"
+            self.btn_play.custom_bg = (51, 65, 85)
+            if hasattr(self, "btn_step"):
+                self.btn_step.custom_bg = (51, 65, 85)
+        else:
+            self.btn_play.text = "⏸ Pause" if self.is_playing else "▶ Play"
+            self.btn_play.custom_bg = (245, 158, 11) if self.is_playing else (16, 185, 129)
+            if hasattr(self, "btn_step"):
+                self.btn_step.custom_bg = (56, 189, 248)
 
     def reset_env(self, seed: int | None = None, difficulty: str | None = None) -> None:
         """Initialize or reset the environment with the specified configuration."""
@@ -396,6 +424,8 @@ class ExplorerUIApp:
         self._init_agent()
         self.trajectory = [tuple(self.raw_env.agent_pos)]
         self.last_reward = 0.0
+        self.is_done = False
+        self.final_end_reason = None
         self.last_breakdown = {
             "reward_reveal": 0.0,
             "reward_poi": 0.0,
@@ -438,7 +468,7 @@ class ExplorerUIApp:
 
     def step(self, action: int | None = None) -> None:
         """Advance simulation by one environment step."""
-        if self.raw_env is None or self.env is None:
+        if self.raw_env is None or self.env is None or self.is_done:
             return
 
         # If manual action is not specified, query autonomous agent
@@ -463,6 +493,8 @@ class ExplorerUIApp:
 
         if term or trunc:
             self.is_playing = False
+            self.is_done = True
+            self.final_end_reason = self.info.get("end_reason")
             self._sync_button_states()
 
     def handle_events(self) -> bool:
@@ -481,11 +513,13 @@ class ExplorerUIApp:
                 if event.key == pygame.K_ESCAPE:
                     return False
                 elif event.key == pygame.K_SPACE:
-                    self.is_playing = not self.is_playing
-                    self._sync_button_states()
-                elif event.key in (pygame.K_s, pygame.K_RIGHT):
+                    if not self.is_done:
+                        self.is_playing = not self.is_playing
+                        self._sync_button_states()
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     self.is_playing = False
-                    self.step()
+                    if not self.is_done:
+                        self.step()
                 elif event.key == pygame.K_r:
                     self.reset_env(self.seed)
                 elif event.key == pygame.K_n:
@@ -509,12 +543,13 @@ class ExplorerUIApp:
                     self.show_fog = not self.show_fog
                 # Manual WASD controls
                 elif self.agent_type == "manual":
-                    if event.key in (pygame.K_a, pygame.K_LEFT):
-                        self.step(0)  # Left
-                    elif event.key in (pygame.K_d, pygame.K_RIGHT):
-                        self.step(1)  # Right
-                    elif event.key in (pygame.K_w, pygame.K_UP):
-                        self.step(2)  # Forward
+                    if not self.is_done:
+                        if event.key in (pygame.K_a, pygame.K_LEFT):
+                            self.step(0)  # Left
+                        elif event.key in (pygame.K_d, pygame.K_RIGHT):
+                            self.step(1)  # Right
+                        elif event.key in (pygame.K_w, pygame.K_UP):
+                            self.step(2)  # Forward
 
         return True
 
@@ -530,11 +565,13 @@ class ExplorerUIApp:
             self._init_agent()
             self._sync_button_states()
         elif tag == "ctrl_play":
-            self.is_playing = not self.is_playing
-            self._sync_button_states()
+            if not self.is_done:
+                self.is_playing = not self.is_playing
+                self._sync_button_states()
         elif tag == "ctrl_step":
             self.is_playing = False
-            self.step()
+            if not self.is_done:
+                self.step()
             self._sync_button_states()
         elif tag in ("ctrl_reset", "reset_ep"):
             self.reset_env(self.seed)
@@ -695,7 +732,7 @@ class ExplorerUIApp:
         # Status Badge
         status_msg = "EXPLORING"
         status_color = COLOR_CYAN
-        end_reason = self.info.get("end_reason")
+        end_reason = self.final_end_reason if self.is_done else self.info.get("end_reason")
         if end_reason == "coverage":
             status_msg = "SUCCESS (TARGET REACHED)"
             status_color = COLOR_GREEN
@@ -819,9 +856,9 @@ class ExplorerUIApp:
         hotkeys = [
             ("Space", "Play / Pause"),
             ("Tab", "Cycle agent"),
-            ("S / Right", "Step 1 action"),
+            ("Enter", "Step 1 action"),
             ("R", "Reset episode"),
-            ("W, A, D", "Manual move"),
+            ("W,A,D/Arrows", "Manual move"),
             ("F", "Toggle Fog"),
             ("1, 2, 3", "Easy/Med/Hard"),
             ("N", "Next seed"),
