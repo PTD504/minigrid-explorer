@@ -1,19 +1,19 @@
-#!/usr/bin/env python3
-"""Run and benchmark baseline exploration agents on MiniGrid Explorer.
+"""Visualize trajectories and coverage dynamics of baseline agents on MiniGrid Explorer.
 
-Supports:
-1. RandomAgent: Uniform random exploration (naive lower bound).
-2. WallFollowerAgent: Deterministic left-hand wall-following heuristic.
-3. FrontierExplorerAgent: Classical BFS frontier exploration (primary RL target).
-4. OraclePlannerAgent: Privileged shortest-path planner (theoretical upper bound).
+Executes baseline policies across procedural dungeons, tracks complete trajectories
+of the agent and monsters, and generates side-by-side visual diagnostic plots.
 
-Evaluates key metrics across episodes:
-- Revealed area coverage (|R_T ∩ W| / |W|)
-- Visited path coverage (|V_T ∩ W| / |W|)
-- POI discovery rate
-- Survival rate & collision rate
-- Temporal efficiency (steps, bump rate, reward)
-- Step inference latency (ms)
+Supports 4 Baseline Algorithms:
+  1. RandomAgent: Uniform random exploration (naive lower bound).
+  2. WallFollowerAgent: Deterministic left-hand wall-following heuristic.
+  3. FrontierExplorerAgent: Classical BFS frontier exploration (primary RL target).
+  4. OraclePlannerAgent: Privileged shortest-path planner (theoretical upper bound).
+
+Outputs:
+  - Visual Diagnostic Plot: Multi-panel 2D trajectory maps + coverage accumulation curves
+    (e.g. assets/agents/baseline_comparison.png).
+  - Terminal Diagnostic Metrics: Episode statistics (revealed coverage, visited floor, POI, survival).
+  - Optional Raw JSON: Complete trajectory and step-by-step telemetry data.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from explorer.agents import (
 )
 from explorer.envs.explore_env import ExploreEnv
 from explorer.envs.wrappers import ObservationMemoryWrapper
-from explorer.utils.config import get_seeds_config
+from explorer.utils.config import get_seeds_config, get_split
 
 AGENT_REGISTRY = {
     "random": RandomAgent,
@@ -377,7 +377,7 @@ def generate_comparison_plot(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Benchmark and evaluate baseline agents on MiniGrid Explorer."
+        description="Visualize trajectories and evaluate baseline agents on MiniGrid Explorer."
     )
     parser.add_argument(
         "--agent",
@@ -444,8 +444,7 @@ def main() -> None:
 
     # Determine seed range
     if args.seed is None:
-        seeds_cfg = get_seeds_config()
-        start_seed = seeds_cfg.get("val", {}).get("start", 1000000)
+        start_seed = get_split("val").start
     else:
         start_seed = args.seed
 
