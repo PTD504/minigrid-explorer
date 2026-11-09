@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Diagnostic script to inspect and visualize ObservationMemoryWrapper in action.
 
 Produces:

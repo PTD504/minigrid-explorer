@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Visualize exploration coverage tracking and monster dynamics across episodes.
 
 Generates visual diagnostic figures demonstrating:

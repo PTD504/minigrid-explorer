@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Interactive GUI launcher for MiniGrid Explorer Research UI.
 
 Usage:

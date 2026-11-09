@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Batch map visualizer to inspect and compare procedural map generation across seeds and difficulties."""
 
 from __future__ import annotations

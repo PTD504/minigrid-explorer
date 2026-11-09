@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Interactive manual player for MiniGrid Explorer.
 
 Inherits directly from MiniGrid's official ManualControl class, adding WASD navigation,
