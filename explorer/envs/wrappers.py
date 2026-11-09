@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -263,4 +265,75 @@ class ObservationMemoryWrapper(gym.ObservationWrapper):
 
 # Alias for concise import
 ExploreObsWrapper = ObservationMemoryWrapper
+
+
+class TrainMapSampler(gym.Wrapper):
+    """Worker-level map seed sampler drawing exclusively from the training split.
+
+    Guarantees:
+    1. Caller-provided seeds to reset() (e.g. from SB3 VecEnv) are strictly ignored for map selection.
+    2. Every sampled seed is verified to lie within seed_pool.
+    3. Each worker appends every drawn map seed to a local JSONL audit trail with resume_count.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        seed_pool: range,
+        rng: np.random.Generator,
+        log_file: Path | str | None = None,
+        resume_count: int = 0,
+    ) -> None:
+        super().__init__(env)
+        self.seed_pool = seed_pool
+        self.rng = rng
+        self.log_file = Path(log_file).resolve() if log_file is not None else None
+        self.resume_count = int(resume_count)
+        self.ep_count = 0
+        self.total_steps = 0
+
+        if self.log_file is not None:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
+        obs, rew, term, trunc, info = self.env.step(action)
+        self.total_steps += 1
+        return obs, rew, term, trunc, info
+
+    def reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, Any]]:
+        # Strictly ignore external seed parameter (e.g. passed by SB3 VecEnv)
+        map_seed = int(self.rng.integers(self.seed_pool.start, self.seed_pool.stop))
+
+        # Enforce boundary check
+        if map_seed not in self.seed_pool:
+            raise ValueError(
+                f"Sampled map_seed {map_seed} outside authorized seed_pool "
+                f"[{self.seed_pool.start}, {self.seed_pool.stop - 1}]."
+            )
+
+        self.ep_count += 1
+
+        if self.log_file is not None:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            record = {
+                "episode": self.ep_count,
+                "step": self.total_steps,
+                "map_seed": map_seed,
+                "resume_count": self.resume_count,
+            }
+            with open(self.log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+
+        obs, info = super().reset(seed=map_seed, options=options, **kwargs)
+        if isinstance(info, dict):
+            info["map_seed"] = map_seed
+
+        return obs, info
+
 

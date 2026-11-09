@@ -32,6 +32,7 @@ class ExploreEnv(MiniGridEnv):
         max_steps: int | None = None,
         size: int | None = None,
         terminate_on_coverage: bool = False,
+        monster_mode: str | None = None,
         **kwargs,
     ):
         self.difficulty = difficulty
@@ -41,7 +42,13 @@ class ExploreEnv(MiniGridEnv):
             "terminate_on_coverage", False
         )
         self.target_coverage = float(self.config.get("target_coverage", 0.95))
+        self.monster_mode = monster_mode or self.config.get("monster_mode", "normal")
+        if self.monster_mode not in ("normal", "off", "invulnerable"):
+            raise ValueError(
+                f"Invalid monster_mode '{self.monster_mode}'. Valid choices: 'normal', 'off', 'invulnerable'."
+            )
         self._coverage_bonus_awarded = False
+        self.monster_collisions: int = 0
         self.reward_engine = RewardEngine(self.reward_config)
 
         grid_size = size or self.config.get("size", 17)
@@ -85,22 +92,29 @@ class ExploreEnv(MiniGridEnv):
 
         # Initialize deterministic monster manager
         monster_seed = int(self.np_random.integers(0, 1_000_000_000))
-        self.monster_manager = MonsterManager(
-            config=self.config,
-            seed=monster_seed,
-            rooms=self.map_metadata.rooms,
-            walkable_tiles=self.walkable_tiles,
-            agent_start_pos=self.agent_pos,
-            grid=self.grid,
-            poi_positions=self.poi_positions,
-        )
-        self.monsters = self.monster_manager.monsters
+        if self.monster_mode == "off":
+            self.monster_manager = None
+            self.monsters = []
+        else:
+            self.monster_manager = MonsterManager(
+                config=self.config,
+                seed=monster_seed,
+                rooms=self.map_metadata.rooms,
+                walkable_tiles=self.walkable_tiles,
+                agent_start_pos=self.agent_pos,
+                grid=self.grid,
+                poi_positions=self.poi_positions,
+            )
+            self.monsters = self.monster_manager.monsters
 
     def reset(self, *args, **kwargs):
         """Reset environment and initialize initial step-0 visibility tracking."""
         obs, info = super().reset(*args, **kwargs)
         self.reward_engine.reset()
         self._coverage_bonus_awarded = False
+        self.monster_collisions = 0
+        self._episode_ended = False
+        self._end_reason = None
         # Process initial step-0 field of view
         top_x, top_y, _, _ = self.get_view_exts()
         _, vis_mask = self.gen_obs_grid()
@@ -117,9 +131,16 @@ class ExploreEnv(MiniGridEnv):
             for m in self.monsters
             if m.pos in self.tracker.current_visible_tiles
         ]
+        ax, ay = self.agent_pos
+        near_monster = any(abs(m.pos[0] - ax) + abs(m.pos[1] - ay) <= 1 for m in self.monsters)
+        near_monster_dist2 = any(abs(m.pos[0] - ax) + abs(m.pos[1] - ay) <= 2 for m in self.monsters)
         info.update({
             "delta_revealed": delta_rev,
             "delta_pois": delta_poi,
+            "near_monster": near_monster,
+            "near_monster_dist2": near_monster_dist2,
+            "monster_collision": False,
+            "monster_collisions": 0,
             "monsters": visible_monsters,
             **self.tracker.get_eval_metrics(),
         })
@@ -167,6 +188,44 @@ class ExploreEnv(MiniGridEnv):
         4. Check termination criteria (death > coverage > timeout).
         5. Generate partially observable observation.
         """
+        if getattr(self, "_episode_ended", False):
+            obs = self.gen_obs()
+            terminated = self._end_reason in ("death", "coverage")
+            truncated = self._end_reason == "timeout"
+            visible_monsters = [
+                {"id": m.id, "pos": m.pos, "state": m.state}
+                for m in self.monsters
+                if m.pos in self.tracker.current_visible_tiles
+            ]
+            ax, ay = self.agent_pos
+            near_monster = any(abs(m.pos[0] - ax) + abs(m.pos[1] - ay) <= 1 for m in self.monsters)
+            near_monster_dist2 = any(abs(m.pos[0] - ax) + abs(m.pos[1] - ay) <= 2 for m in self.monsters)
+            info: dict[str, Any] = {
+                "bump": False,
+                "is_loop": False,
+                "near_monster": near_monster,
+                "near_monster_dist2": near_monster_dist2,
+                "monster_collision": (self._end_reason == "death"),
+                "monster_collisions": self.monster_collisions,
+                "end_reason": self._end_reason,
+                "step_count": self.step_count,
+                "delta_revealed": 0,
+                "delta_pois": 0,
+                "reward_breakdown": {
+                    "reward_reveal": 0.0,
+                    "reward_poi": 0.0,
+                    "penalty_step": 0.0,
+                    "penalty_bump": 0.0,
+                    "penalty_loop": 0.0,
+                    "penalty_death": 0.0,
+                    "bonus_done": 0.0,
+                    "total_reward": 0.0,
+                },
+                "monsters": visible_monsters,
+                **self.tracker.get_eval_metrics(),
+            }
+            return obs, 0.0, terminated, truncated, info
+
         self.step_count += 1
         reward = 0.0
         terminated = False
@@ -222,6 +281,9 @@ class ExploreEnv(MiniGridEnv):
                     collision = True
                     break
 
+        if collision:
+            self.monster_collisions += 1
+
         # 4. Update exploration tracking from agent's new field of view
         top_x, top_y, _, _ = self.get_view_exts()
         _, vis_mask = self.gen_obs_grid()
@@ -242,7 +304,7 @@ class ExploreEnv(MiniGridEnv):
 
         # 5. Check termination conditions (strictly death > coverage > timeout)
         end_reason = None
-        if collision:
+        if collision and self.monster_mode == "normal":
             terminated = True
             end_reason = "death"
         elif self.terminate_on_coverage and coverage_done:
@@ -251,6 +313,10 @@ class ExploreEnv(MiniGridEnv):
         elif self.step_count >= self.max_steps:
             truncated = True
             end_reason = "timeout"
+
+        if terminated or truncated:
+            self._episode_ended = True
+            self._end_reason = end_reason
 
         # 6. Compute step reward and diagnostic telemetry
         reward, reward_breakdown = self.reward_engine.compute_reward(
@@ -287,6 +353,8 @@ class ExploreEnv(MiniGridEnv):
             "is_loop": is_loop,
             "near_monster": near_monster,
             "near_monster_dist2": near_monster_dist2,
+            "monster_collision": collision,
+            "monster_collisions": self.monster_collisions,
             "end_reason": end_reason,
             "step_count": self.step_count,
             "delta_revealed": delta_revealed,
