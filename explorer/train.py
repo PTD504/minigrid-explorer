@@ -1099,11 +1099,6 @@ def train_multirun(
         last_model = None
         import gc
 
-        ### BEGIN CUSTOMIZE
-        if run_idx < 3:
-            continue
-        ### END CUSTOMIZE
-
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

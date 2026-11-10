@@ -177,7 +177,7 @@ def evaluate_baseline_agent(
         display_label = "Baseline: Wall Follower"
     elif "oracle" in agent_key:
         factory = lambda env, s: OraclePlannerAgent(env)
-        display_label = "Baseline: Oracle Planner (Privileged)"
+        display_label = "Baseline: Oracle Planner (Privileged Baseline)"
     else:
         raise ValueError(f"Unknown baseline: {agent_name}")
 
@@ -251,7 +251,7 @@ def format_results_terminal(
     seed_range: str,
 ) -> str:
     """Format evaluation results into 2 clean ASCII tables for terminal output."""
-    div_len = 118
+    div_len = 130
     lines: list[str] = [
         "=" * div_len,
         f" MiniGrid Explorer Evaluation: {difficulty.upper()} Suite ({n_episodes} Test Episodes: {seed_range})",
@@ -259,7 +259,7 @@ def format_results_terminal(
         "",
         "Table 1: Primary Exploration & Survival (Mean ± Std across Training Seeds)",
         "-" * div_len,
-        f"{'Model / Agent':<36} {'Runs':<5} {'Coverage (Mean ± Std)':<23} {'POI (%)':<9} {'Success (%)':<12} {'Deaths (%)':<11} {'Steps':<8} {'Return':<9} {'Latency':<9}",
+        f"{'Model / Agent':<48} {'Runs':<5} {'Coverage (Mean ± Std)':<23} {'POI (%)':<9} {'Success (%)':<12} {'Deaths (%)':<11} {'Steps':<8} {'Return':<9} {'Latency':<9}",
         "-" * div_len,
     ]
 
@@ -274,7 +274,7 @@ def format_results_terminal(
         ret = f"{item['reward_mean']:+.3f}"
         lat = f"{item['latency_ms_mean']:.2f} ms"
         lines.append(
-            f"{name:<36} {runs:<5} {cov:<23} {poi:<9} {succ:<12} {deaths:<11} {steps:<8} {ret:<9} {lat:<9}"
+            f"{name:<48} {runs:<5} {cov:<23} {poi:<9} {succ:<12} {deaths:<11} {steps:<8} {ret:<9} {lat:<9}"
         )
 
     lines.extend([
@@ -282,7 +282,7 @@ def format_results_terminal(
         "",
         "Table 2: Navigation Regularization & Diagnostic Telemetry",
         "-" * div_len,
-        f"{'Model / Agent':<36} {'Wall Bump (%)':<15} {'Loop Rate (%)':<15} {'Revealed Eff (tiles/step)':<28} {'25% Cov':<10} {'50% Cov':<10} {'FPS':<6}",
+        f"{'Model / Agent':<48} {'Wall Bump (%)':<15} {'Loop Rate (%)':<15} {'Revealed Eff (tiles/step)':<28} {'25% Cov':<10} {'50% Cov':<10} {'FPS':<6}",
         "-" * div_len,
     ])
 
@@ -295,7 +295,7 @@ def format_results_terminal(
         m50 = f"{item['milestones'].get('50%', 0.0):.1f}%"
         fps = f"{item['fps_mean']:.0f}"
         lines.append(
-            f"{name:<36} {bump:<15} {loop:<15} {eff:<28} {m25:<10} {m50:<10} {fps:<6}"
+            f"{name:<48} {bump:<15} {loop:<15} {eff:<28} {m25:<10} {m50:<10} {fps:<6}"
         )
 
     lines.append("-" * div_len)

@@ -33,17 +33,47 @@ class RLAgent(BaseAgent):
         self.model: Any = None
         self.is_recurrent: bool = False
 
-        # Attempt loading with PPO first; fallback to RecurrentPPO if policy is recurrent
+        # Inspect checkpoint zip metadata to detect recurrent policies reliably.
+        # Note: PPO.load can deserialize recurrent policies without raising an exception,
+        # which would otherwise leave is_recurrent=False and drop recurrent state tracking.
+        is_recurrent_ckpt = False
         try:
-            self.model = PPO.load(str(self.checkpoint_path), device=self.device)
-        except (ValueError, TypeError, RuntimeError, KeyError):
+            import json
+            import zipfile
+
+            with zipfile.ZipFile(self.checkpoint_path, "r") as archive:
+                if "data" in archive.namelist():
+                    data = json.loads(archive.read("data").decode("utf-8"))
+                    policy_info = str(data.get("policy_class", "")).lower()
+                    if "recurrent" in policy_info:
+                        is_recurrent_ckpt = True
+        except Exception:
+            pass
+
+        if is_recurrent_ckpt:
             try:
                 self.model = RecurrentPPO.load(str(self.checkpoint_path), device=self.device)
                 self.is_recurrent = True
-            except (ValueError, TypeError, RuntimeError, KeyError) as exc:
+            except Exception as exc:
                 raise RuntimeError(
-                    f"Failed to load checkpoint '{self.checkpoint_path}' with PPO or RecurrentPPO: {exc}"
+                    f"Failed to load recurrent checkpoint '{self.checkpoint_path}': {exc}"
                 ) from exc
+        else:
+            try:
+                self.model = PPO.load(str(self.checkpoint_path), device=self.device)
+                # Verify that the loaded policy is indeed non-recurrent
+                if "recurrent" in self.model.policy.__class__.__name__.lower():
+                    self.model = RecurrentPPO.load(str(self.checkpoint_path), device=self.device)
+                    self.is_recurrent = True
+            except Exception:
+                # Fallback to RecurrentPPO if PPO.load failed
+                try:
+                    self.model = RecurrentPPO.load(str(self.checkpoint_path), device=self.device)
+                    self.is_recurrent = True
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Failed to load checkpoint '{self.checkpoint_path}' with PPO or RecurrentPPO: {exc}"
+                    ) from exc
 
         self.lstm_states: Any = None
         self.episode_starts: np.ndarray = np.ones((1,), dtype=bool)
