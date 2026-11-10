@@ -189,3 +189,157 @@ def test_ui_app_with_alias_checkpoint():
     app.render()
 
 
+def test_ui_app_terminal_lock_on_death():
+    """Verify simulation locks permanently when agent dies, preventing further moves."""
+    app = ExplorerUIApp(difficulty="easy", seed=42, agent_type="manual", headless=True)
+    assert app.raw_env is not None
+    assert not app.is_done
+
+    # Place agent directly next to a monster to force collision on forward move
+    monster = app.raw_env.monsters[0]
+    mx, my = monster.pos
+    app.raw_env.agent_pos = (mx - 1, my)
+    app.raw_env.agent_dir = 0  # Facing Right towards monster
+
+    # Advance 1 step forward into monster
+    app.step(2)
+
+    assert app.is_done is True
+    assert app.final_end_reason == "death"
+    traj_len_at_death = len(app.trajectory)
+    step_count_at_death = app.raw_env.step_count
+
+    # Attempt to step again via autonomous agent step
+    app.step()
+    assert len(app.trajectory) == traj_len_at_death
+    assert app.raw_env.step_count == step_count_at_death
+
+    # Attempt to step via manual WASD action
+    app.step(2)
+    assert len(app.trajectory) == traj_len_at_death
+    assert app.raw_env.step_count == step_count_at_death
+
+    # Ensure UI rendering displays dead status and button states remain locked
+    app.render()
+    assert app.btn_play.custom_bg == (51, 65, 85)
+
+
+def test_ui_app_terminal_lock_on_coverage():
+    """Verify simulation locks permanently when target coverage is reached."""
+    app = ExplorerUIApp(difficulty="easy", seed=42, agent_type="manual", headless=True)
+    assert app.raw_env is not None
+
+    # Simulate achieving target coverage (>= 95%)
+    app.raw_env.tracker.revealed_tiles = set(app.raw_env.walkable_tiles)
+    app.step(0)  # Turn in place
+
+    assert app.is_done is True
+    assert app.final_end_reason == "coverage"
+    traj_len = len(app.trajectory)
+
+    # Further steps must be no-ops
+    app.step()
+    app.step(1)
+    assert len(app.trajectory) == traj_len
+    app.render()
+
+
+def test_ui_app_terminal_lock_on_timeout():
+    """Verify simulation locks permanently when max steps are reached."""
+    app = ExplorerUIApp(difficulty="easy", seed=42, agent_type="manual", headless=True)
+    assert app.raw_env is not None
+
+    # Set step_count right at max_steps - 1
+    app.raw_env.step_count = app.raw_env.max_steps - 1
+    app.step(0)  # Turn in place to hit max_steps
+
+    assert app.is_done is True
+    assert app.final_end_reason == "timeout"
+    traj_len = len(app.trajectory)
+    step_count = app.raw_env.step_count
+
+    # Further steps must be no-ops
+    app.step()
+    assert len(app.trajectory) == traj_len
+    assert app.raw_env.step_count == step_count
+    app.render()
+
+
+def test_ui_app_reset_clears_terminal_lock():
+    """Verify resetting the environment clears the terminal lock and permits stepping."""
+    app = ExplorerUIApp(difficulty="easy", seed=42, agent_type="frontier", headless=True)
+    app.is_done = True
+    app.final_end_reason = "death"
+
+    # Reset environment
+    app.reset_env()
+    assert app.is_done is False
+    assert app.final_end_reason is None
+
+    # Should be able to step now
+    initial_traj_len = len(app.trajectory)
+    app.step()
+    assert len(app.trajectory) == initial_traj_len + 1
+
+
+def test_ui_app_hotkeys_manual_controls():
+    """Verify manual navigation supports Arrow keys and WASD without key collision."""
+    import pygame
+
+    app = ExplorerUIApp(difficulty="easy", seed=42, agent_type="manual", headless=True)
+    assert app.raw_env is not None
+    init_dir = app.raw_env.agent_dir
+
+    # Test Right Arrow turns right
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT))
+    app.handle_events()
+    assert app.raw_env.agent_dir == (init_dir + 1) % 4
+
+    # Test Left Arrow turns left
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_LEFT))
+    app.handle_events()
+    assert app.raw_env.agent_dir == init_dir
+
+    # Test D key turns right
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_d))
+    app.handle_events()
+    assert app.raw_env.agent_dir == (init_dir + 1) % 4
+
+    # Test A key turns left
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_a))
+    app.handle_events()
+    assert app.raw_env.agent_dir == init_dir
+
+
+def test_ui_app_hotkeys_agent_mode_no_navigation_leak():
+    """Verify that in autonomous agent mode, pressing S or Arrow keys does NOT step the agent."""
+    import pygame
+
+    app = ExplorerUIApp(difficulty="easy", seed=42, agent_type="frontier", headless=True)
+    initial_traj_len = len(app.trajectory)
+
+    # Pressing S must NOT step the agent
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_s))
+    app.handle_events()
+    assert len(app.trajectory) == initial_traj_len
+
+    # Pressing Right Arrow must NOT step the agent
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT))
+    app.handle_events()
+    assert len(app.trajectory) == initial_traj_len
+
+    # Pressing Enter MUST step the agent
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+    app.handle_events()
+    assert len(app.trajectory) == initial_traj_len + 1
+
+
+
+

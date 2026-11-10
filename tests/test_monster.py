@@ -212,3 +212,68 @@ def test_info_monsters_strict_pomdp_filtering():
         f"Visible monster at {monster.pos} was not reported in info: {step_info2['monsters']}"
     )
 
+
+def test_monster_mode_off_no_monsters():
+    """monster_mode='off' ensures no monsters spawn or exist in the environment."""
+    for diff in ["easy", "medium", "hard"]:
+        env = ExploreEnv(difficulty=diff, monster_mode="off")
+        obs, info = env.reset(seed=123)
+
+        assert env.monster_manager is None
+        assert len(env.monsters) == 0
+        assert len(info["monsters"]) == 0
+        assert info["near_monster"] is False
+        assert info["monster_collisions"] == 0
+
+        # Step and verify no monster appears
+        obs, rew, term, trunc, info = env.step(env.action_space.sample())
+        assert len(env.monsters) == 0
+        assert len(info["monsters"]) == 0
+        assert info["monster_collision"] is False
+
+
+def test_monster_mode_reset_reproducible():
+    """Identical seeds produce identical layouts for off and invulnerable modes."""
+    # Test 'off' mode reproducibility
+    env1 = ExploreEnv(difficulty="medium", monster_mode="off")
+    env2 = ExploreEnv(difficulty="medium", monster_mode="off")
+    obs1, _ = env1.reset(seed=777)
+    obs2, _ = env2.reset(seed=777)
+    assert np.array_equal(obs1["image"], obs2["image"])
+    assert env1.agent_pos == env2.agent_pos
+    assert env1.poi_positions == env2.poi_positions
+
+    # Test 'invulnerable' mode reproducibility
+    env_inv1 = ExploreEnv(difficulty="medium", monster_mode="invulnerable")
+    env_inv2 = ExploreEnv(difficulty="medium", monster_mode="invulnerable")
+    obs_inv1, _ = env_inv1.reset(seed=777)
+    obs_inv2, _ = env_inv2.reset(seed=777)
+    assert np.array_equal(obs_inv1["image"], obs_inv2["image"])
+    assert [m.pos for m in env_inv1.monsters] == [m.pos for m in env_inv2.monsters]
+
+
+def test_monster_mode_invulnerable_collision_survives():
+    """monster_mode='invulnerable' counts collision but does NOT terminate episode or penalize death."""
+    env = ExploreEnv(difficulty="easy", monster_mode="invulnerable")
+    env.reset(seed=42)
+
+    monster = env.monsters[0]
+    ax, ay = env.agent_pos
+
+    # Face East (dir=0) and place monster directly 1 step in front of agent
+    env.agent_dir = 0
+    front_pos = (ax + 1, ay)
+    if front_pos in env.walkable_tiles:
+        monster.pos = front_pos
+        env.grid.set(front_pos[0], front_pos[1], monster.world_obj)
+
+        # Action 2 is forward (step directly into monster tile)
+        obs, rew, terminated, truncated, info = env.step(2)
+
+        assert info["monster_collision"] is True
+        assert info["monster_collisions"] >= 1
+        assert terminated is False, "Invulnerable mode should not terminate on monster collision!"
+        assert info["end_reason"] != "death"
+        assert info["reward_breakdown"].get("penalty_death", 0.0) == 0.0
+
+

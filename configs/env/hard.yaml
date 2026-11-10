@@ -8,7 +8,7 @@ num_pois: 5
 num_monsters: 2
 monster_period: 2
 monster_detect_radius: 7
-max_steps: 700
+max_steps: 740
 target_coverage: 0.95
 poi_min_dist: 8
 monster_min_dist: 9
