@@ -1,0 +1,20 @@
+{
+  "global_seed": 2026,
+  "seed_count": 5,
+  "seeds": [
+    479243620,
+    454024514,
+    1818751028,
+    2288458700,
+    2115331525
+  ],
+  "difficulty": "easy",
+  "algo": "ppo",
+  "use_memory": false,
+  "reward_config": "default",
+  "n_envs": 8,
+  "config_hash": "f800610a4c3f913d",
+  "git_commit": "aa805abe8be29828a41ac7ead3a08639353817c7",
+  "created_at": "2026-11-06T14:43:34.125644",
+  "updated_at": "2026-11-07T22:29:42.200478"
+}
