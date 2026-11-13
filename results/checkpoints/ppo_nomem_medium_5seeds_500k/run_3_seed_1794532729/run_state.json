@@ -1,0 +1,15 @@
+{
+  "run_idx": 3,
+  "algo_seed": 1794532729,
+  "status": "completed",
+  "current_timestep": 500736,
+  "total_timesteps": 500000,
+  "best_score": 0.8760233984645478,
+  "best_poi_rate": 0.7666666666666666,
+  "best_timestep": 440000,
+  "resume_count": 0,
+  "wandb_run_id": null,
+  "config_hash": "80cef930f1defaff",
+  "created_at": "2026-11-07T22:51:07.054864",
+  "updated_at": "2026-11-07T23:02:49.553318"
+}

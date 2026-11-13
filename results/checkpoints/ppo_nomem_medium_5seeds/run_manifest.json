@@ -13,8 +13,8 @@
   "use_memory": false,
   "reward_config": "default",
   "n_envs": 8,
-  "config_hash": "92ed740d907fd6b9",
-  "git_commit": "aa805abe8be29828a41ac7ead3a08639353817c7",
-  "created_at": "2026-11-07T13:29:26.576229",
-  "updated_at": "2026-11-07T22:51:07.005997"
+  "config_hash": "f30487b0a201e5a1",
+  "git_commit": "e77b1b92f2f2280b4dade499ea063178103527bb",
+  "created_at": "2026-11-12T19:31:24.309244",
+  "updated_at": "2026-11-12T21:01:22.108202"
 }

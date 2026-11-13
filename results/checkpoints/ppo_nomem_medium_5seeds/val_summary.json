@@ -1,59 +1,59 @@
 {
-  "experiment": "ppo_nomem_medium_5seeds",
+  "experiment": "ppo-medium-nomem_seed2026",
   "num_runs": 5,
-  "coverage_mean": 0.8605052418956124,
-  "coverage_std": 0.016958637427899884,
-  "poi_mean": 0.6566666666666666,
-  "poi_std": 0.05734883511361751,
+  "coverage_mean": 0.891629538772877,
+  "coverage_std": 0.013258592462676112,
+  "poi_mean": 0.6966666666666667,
+  "poi_std": 0.037118429085533464,
   "top_run": {
-    "run": "run_2_seed_678255440",
+    "run": "run_4_seed_2249941749",
     "status": "completed",
-    "best_score": 0.8823839941878043,
-    "best_poi_rate": 0.6333333333333334,
-    "best_timestep": 450000,
-    "current_timestep": 500736
+    "best_score": 0.9038098919449329,
+    "best_poi_rate": 0.7,
+    "best_timestep": 900000,
+    "current_timestep": 1000448
   },
   "runs": [
     {
       "run": "run_0_seed_2610532756",
       "status": "completed",
-      "best_score": 0.8565521272812537,
-      "best_poi_rate": 0.5999999999999999,
-      "best_timestep": 500000,
-      "current_timestep": 500736
+      "best_score": 0.8718894862699708,
+      "best_poi_rate": 0.6666666666666666,
+      "best_timestep": 970000,
+      "current_timestep": 1000448
     },
     {
       "run": "run_1_seed_98115779",
       "status": "completed",
-      "best_score": 0.8522572202117604,
-      "best_poi_rate": 0.6333333333333333,
-      "best_timestep": 400000,
-      "current_timestep": 500736
+      "best_score": 0.8796419755561524,
+      "best_poi_rate": 0.6666666666666666,
+      "best_timestep": 600000,
+      "current_timestep": 1000448
     },
     {
       "run": "run_2_seed_678255440",
       "status": "completed",
-      "best_score": 0.8823839941878043,
-      "best_poi_rate": 0.6333333333333334,
-      "best_timestep": 450000,
-      "current_timestep": 500736
+      "best_score": 0.9031597698611172,
+      "best_poi_rate": 0.6833333333333333,
+      "best_timestep": 930000,
+      "current_timestep": 1000448
     },
     {
       "run": "run_3_seed_1794532729",
       "status": "completed",
-      "best_score": 0.8760233984645478,
+      "best_score": 0.8996465702322117,
       "best_poi_rate": 0.7666666666666666,
-      "best_timestep": 440000,
-      "current_timestep": 500736
+      "best_timestep": 980000,
+      "current_timestep": 1000448
     },
     {
       "run": "run_4_seed_2249941749",
       "status": "completed",
-      "best_score": 0.8353094693326962,
-      "best_poi_rate": 0.6499999999999999,
-      "best_timestep": 430000,
-      "current_timestep": 500736
+      "best_score": 0.9038098919449329,
+      "best_poi_rate": 0.7,
+      "best_timestep": 900000,
+      "current_timestep": 1000448
     }
   ],
-  "updated_at": "2026-11-07T23:14:09.747938"
+  "updated_at": "2026-11-12T21:22:57.888488"
 }

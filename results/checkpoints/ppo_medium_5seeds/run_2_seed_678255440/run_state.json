@@ -2,14 +2,14 @@
   "run_idx": 2,
   "algo_seed": 678255440,
   "status": "completed",
-  "current_timestep": 500736,
-  "total_timesteps": 500000,
-  "best_score": 0.7609761807424953,
-  "best_poi_rate": 0.6,
-  "best_timestep": 500000,
+  "current_timestep": 1000448,
+  "total_timesteps": 1000000,
+  "best_score": 0.7798089195799923,
+  "best_poi_rate": 0.5666666666666667,
+  "best_timestep": 1000000,
   "resume_count": 0,
   "wandb_run_id": null,
-  "config_hash": "b8d1b02afcdb7ecb",
-  "created_at": "2026-11-07T13:14:09.618158",
-  "updated_at": "2026-11-07T13:24:08.122938"
+  "config_hash": "dced15931e1092dc",
+  "created_at": "2026-11-13T08:06:58.231269",
+  "updated_at": "2026-11-13T08:26:03.308274"
 }
