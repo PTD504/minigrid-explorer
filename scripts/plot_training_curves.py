@@ -98,7 +98,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Revealed Coverage (%)",
         ylim=(0.0, 105.0),
         scale=100.0,
-        description="Tỷ lệ diện tích bản đồ được mở sương mù (%)",
+        description="Percentage of map area revealed from fog of war (%)",
     ),
     "visited": MetricDef(
         key="visited",
@@ -106,7 +106,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Visited Floor (%)",
         ylim=(0.0, 105.0),
         scale=100.0,
-        description="Tỷ lệ ô sàn thực tế agent đã bước qua (%)",
+        description="Percentage of walkable floor tiles physically visited by the agent (%)",
     ),
     "poi": MetricDef(
         key="poi",
@@ -114,7 +114,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="POI Discovery Rate (%)",
         ylim=(0.0, 105.0),
         scale=100.0,
-        description="Tỷ lệ phát hiện điểm quan tâm (Point of Interest) (%)",
+        description="Percentage of Points of Interest (POIs) discovered (%)",
     ),
     "death": MetricDef(
         key="death",
@@ -122,7 +122,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Monster Mortality Rate (%)",
         ylim=(0.0, 105.0),
         scale=100.0,
-        description="Tỷ lệ tử vong do va chạm quái vật (%)",
+        description="Percentage of episodes ending in monster collision death (%)",
     ),
     "reward": MetricDef(
         key="reward",
@@ -130,7 +130,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Mean Validation Return",
         ylim=None,
         scale=1.0,
-        description="Điểm thưởng tích lũy trung bình trong tập validation",
+        description="Mean cumulative return across the validation suite",
     ),
     "steps": MetricDef(
         key="steps",
@@ -138,7 +138,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Mean Episode Length (steps)",
         ylim=None,
         scale=1.0,
-        description="Số bước sinh tồn trung bình mỗi episode",
+        description="Mean survival length per episode (steps)",
     ),
     # --- Optimization / Loss Suite ---
     "loss": MetricDef(
@@ -147,7 +147,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Total Combined Loss",
         ylim=None,
         scale=1.0,
-        description="Tổng loss kết hợp của thuật toán PPO",
+        description="Total combined optimization loss of the PPO algorithm",
     ),
     "value_loss": MetricDef(
         key="value_loss",
@@ -155,7 +155,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Critic Value Loss (MSE)",
         ylim=None,
         scale=1.0,
-        description="Sai số dự đoán hàm giá trị của mạng Critic",
+        description="Mean squared error of the Critic value function prediction",
     ),
     "policy_loss": MetricDef(
         key="policy_loss",
@@ -163,7 +163,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Policy Gradient Loss",
         ylim=None,
         scale=1.0,
-        description="Hàm mục tiêu surrogate clipped của mạng Actor",
+        description="Clipped surrogate objective loss of the Actor network",
     ),
     "entropy": MetricDef(
         key="entropy",
@@ -171,7 +171,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Policy Entropy Loss",
         ylim=None,
         scale=1.0,
-        description="Độ hỗn loạn (entropy) đại diện cho mức thăm dò ngẫu nhiên",
+        description="Policy entropy reflecting the level of stochastic exploration",
     ),
     "explained_var": MetricDef(
         key="explained_var",
@@ -179,7 +179,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Explained Variance",
         ylim=(-0.1, 1.05),
         scale=1.0,
-        description="Tỷ lệ phương sai mà Critic giải thích được (lý tưởng = 1.0)",
+        description="Fraction of return variance explained by the Critic (ideal = 1.0)",
     ),
     "kl": MetricDef(
         key="kl",
@@ -187,7 +187,7 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
         label="Approximate KL Divergence",
         ylim=None,
         scale=1.0,
-        description="Độ lệch phân phối chính sách giữa 2 bản cập nhật PPO",
+        description="Approximate policy distribution divergence between PPO updates",
     ),
 }
 
