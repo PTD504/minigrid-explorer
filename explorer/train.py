@@ -132,6 +132,8 @@ class DungeonEvalCallback(BaseCallback):
         best_timestep: int = 0,
         run_state_file: Path | str | None = None,
         run_state: dict[str, Any] | None = None,
+        early_stop_patience: int | None = None,
+        early_stop_min_delta: float = 0.005,
     ) -> None:
         super().__init__(verbose=verbose)
         self.eval_env = eval_env
@@ -148,6 +150,13 @@ class DungeonEvalCallback(BaseCallback):
         self.best_poi_rate = float(best_poi_rate)
         self.best_timestep = int(best_timestep)
         self.eval_history: list[dict[str, Any]] = []
+
+        self.early_stop_patience = early_stop_patience
+        self.early_stop_min_delta = float(early_stop_min_delta)
+        self._best_eval_for_stop: float = float(best_coverage)
+        self._no_improve_count: int = 0
+        self.converged: bool = False
+        self.converged_timestep: int | None = None
 
         self.run_state_file = (
             Path(run_state_file).resolve() if run_state_file else None
@@ -327,6 +336,28 @@ class DungeonEvalCallback(BaseCallback):
             )
             atomic_save_json(self.run_state_file, self.run_state)
 
+        # 6. Convergence-based early stopping check
+        if self.early_stop_patience is not None and self.early_stop_patience > 0:
+            if mean_revealed_cov > self._best_eval_for_stop + self.early_stop_min_delta:
+                self._best_eval_for_stop = mean_revealed_cov
+                self._no_improve_count = 0
+            else:
+                self._no_improve_count += 1
+                if self._no_improve_count >= self.early_stop_patience:
+                    self.converged = True
+                    self.converged_timestep = self.num_timesteps
+                    if self.run_state_file:
+                        self.run_state["converged"] = True
+                        self.run_state["converged_timestep"] = self.num_timesteps
+                        atomic_save_json(self.run_state_file, self.run_state)
+                    if self.verbose > 0:
+                        print(
+                            f"[EarlyStop @ {self.num_timesteps} steps] "
+                            f"No coverage improvement > {self.early_stop_min_delta * 100:.2f}% "
+                            f"for {self.early_stop_patience} evals. Stopping."
+                        )
+                    return False
+
         return True
 
 
@@ -464,6 +495,8 @@ def train_one(
     device: str = "auto",
     verbose: int = 1,
     extra_callbacks: list[BaseCallback] | None = None,
+    early_stop_patience: int | None = None,
+    early_stop_min_delta: float = 0.005,
 ) -> tuple[BaseAlgorithm | None, float, list[dict[str, Any]]]:
     """Train a single training seed run within an experiment."""
     algo_key = algo.lower().strip()
@@ -702,6 +735,8 @@ def train_one(
         best_timestep=best_timestep,
         run_state_file=run_state_file,
         run_state=run_state,
+        early_stop_patience=early_stop_patience,
+        early_stop_min_delta=early_stop_min_delta,
     )
 
     callbacks: list[BaseCallback] = [eval_callback]
@@ -820,6 +855,9 @@ def train_one(
         run_state["best_score"] = eval_callback.best_coverage
         run_state["best_poi_rate"] = eval_callback.best_poi_rate
         run_state["best_timestep"] = eval_callback.best_timestep
+        run_state["converged"] = eval_callback.converged
+        if eval_callback.converged_timestep is not None:
+            run_state["converged_timestep"] = eval_callback.converged_timestep
         run_state["updated_at"] = datetime.now().isoformat()
         atomic_save_json(run_state_file, run_state)
 
@@ -976,6 +1014,8 @@ def train_multirun(
     device: str = "auto",
     verbose: int = 1,
     extra_callbacks: list[BaseCallback] | None = None,
+    early_stop_patience: int | None = None,
+    early_stop_min_delta: float = 0.005,
 ) -> tuple[BaseAlgorithm | None, float, list[dict[str, Any]]]:
     """Execute sequential multi-run training upfront derived from a single global seed."""
     # 1. Enforce strict split disjointness and absence of invalid keys
@@ -1144,6 +1184,8 @@ def train_multirun(
             exp_name=exp_name,
             device=device,
             verbose=verbose,
+            early_stop_patience=early_stop_patience,
+            early_stop_min_delta=early_stop_min_delta,
         )
         if model is not None:
             last_model = model

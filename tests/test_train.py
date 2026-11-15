@@ -214,3 +214,42 @@ def test_train_invalid_algo() -> None:
     """Verify train raises ValueError on unsupported algorithm name."""
     with pytest.raises(ValueError, match="Unsupported algorithm"):
         train(algo="dqn")
+
+
+def test_dungeon_eval_callback_early_stopping(tmp_path: Path) -> None:
+    """Verify DungeonEvalCallback stops training early when coverage plateaus."""
+    eval_env = make_env(difficulty="easy", seed=None, use_memory=True)()
+    train_venv = make_vec_env_dungeon(
+        difficulty="easy", n_envs=2, seed=1, use_memory=True
+    )
+
+    cb = DungeonEvalCallback(
+        eval_env=eval_env,
+        eval_freq=8,
+        n_eval_episodes=1,
+        val_seeds=[1000000],
+        best_model_save_path=tmp_path / "checkpoints",
+        early_stop_patience=2,
+        early_stop_min_delta=1.0,  # Impossible delta (>100% coverage) to force plateau
+        verbose=0,
+    )
+
+    model = PPO(
+        "MultiInputPolicy",
+        train_venv,
+        n_steps=8,
+        batch_size=8,
+        n_epochs=1,
+        verbose=0,
+    )
+
+    # 8 * 2 = 16 steps per rollout; 256 steps is plenty of room to stop early
+    model.learn(total_timesteps=256, callback=cb)
+
+    assert cb.converged is True
+    assert cb.converged_timestep is not None
+    assert cb.converged_timestep < 256
+    assert len(cb.eval_history) == 3  # 1st sets baseline, next 2 trigger patience=2
+
+    eval_env.close()
+    train_venv.close()

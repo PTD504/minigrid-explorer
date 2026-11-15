@@ -157,6 +157,25 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate override (if None, read from configs/train/<algo>.yaml).",
     )
     parser.add_argument(
+        "--lr-schedule",
+        type=str,
+        default=None,
+        choices=["linear", "constant"],
+        help="Learning rate schedule override ('linear' or 'constant').",
+    )
+    parser.add_argument(
+        "--early-stop-patience",
+        type=int,
+        default=None,
+        help="Stop training if val coverage does not improve by --early-stop-min-delta for N consecutive evals.",
+    )
+    parser.add_argument(
+        "--early-stop-min-delta",
+        type=float,
+        default=0.005,
+        help="Minimum revealed coverage improvement (fraction, e.g. 0.005 = 0.5%%) to reset early stopping.",
+    )
+    parser.add_argument(
         "--n-steps",
         type=int,
         default=None,
@@ -319,12 +338,15 @@ def main() -> None:
         features_dim=args.features_dim,
         reward_config_name=reward_config_name,
         learning_rate=args.lr,
+        lr_schedule_type=args.lr_schedule,
         n_steps=args.n_steps,
         batch_size=args.batch_size,
         ent_coef=args.ent_coef,
         eval_freq=args.eval_freq,
         n_eval_episodes=args.n_eval_episodes,
         save_freq=args.save_freq,
+        early_stop_patience=args.early_stop_patience,
+        early_stop_min_delta=args.early_stop_min_delta,
         max_steps_override=args.max_steps_override,
         resume=args.resume,
         restart=args.restart,
