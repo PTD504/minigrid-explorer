@@ -120,3 +120,34 @@ def test_detect_use_memory():
     rnd = RandomAgent()
     assert detect_use_memory(rnd) is True
 
+
+def test_evaluate_single_agent_blank_channels():
+    """Verify blank_channels zeros out specified memory channels before agent.act()."""
+    import numpy as np
+
+    from explorer.agents.base import BaseAgent
+
+    observed_ch0_max: list[float] = []
+    observed_ch1_max: list[float] = []
+
+    class SpyAgent(BaseAgent):
+        def act(self, obs, info=None):
+            if "memory" in obs:
+                observed_ch0_max.append(float(np.max(obs["memory"][:, :, 0])))
+                observed_ch1_max.append(float(np.max(obs["memory"][:, :, 1])))
+            return 0
+
+    evaluate_single_agent(
+        agent_or_factory=lambda env, s: SpyAgent(),
+        agent_name="SpyBlankTest",
+        difficulty="easy",
+        seeds=[100],
+        use_memory=True,
+        blank_channels=[0],
+        verbose=False,
+    )
+    assert len(observed_ch0_max) > 0
+    assert all(v == 0.0 for v in observed_ch0_max)
+    assert any(v > 0.0 for v in observed_ch1_max)
+
+

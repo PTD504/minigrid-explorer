@@ -107,6 +107,7 @@ def evaluate_single_agent(
     difficulty: str = "medium",
     seeds: list[int] | None = None,
     use_memory: bool | None = None,
+    blank_channels: list[int] | None = None,
     deterministic: bool = True,
     verbose: bool = True,
 ) -> EvalResult:
@@ -162,6 +163,10 @@ def evaluate_single_agent(
         step_idx = 0
 
         while not done:
+            if blank_channels and "memory" in obs:
+                for ch in blank_channels:
+                    if 0 <= ch < obs["memory"].shape[-1]:
+                        obs["memory"][:, :, ch] = 0.0
             action = agent.act(obs, info)
             obs, rew, term, trunc, info = env.step(action)
             step_idx += 1

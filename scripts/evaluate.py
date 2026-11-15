@@ -473,6 +473,13 @@ def main() -> None:
         action="store_true",
         help="Fast verification mode: evaluates 5 episodes and at most 1 run per model.",
     )
+    parser.add_argument(
+        "--blank-channels",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Memory channel indices to zero-out at eval time (0=revealed, 1=visited, 2=wall, 3=poi).",
+    )
 
     args = parser.parse_args()
 
@@ -557,7 +564,12 @@ def main() -> None:
                 continue
 
             family_name, run_ckpts = resolved
-            print(f"  [RL Family] '{family_name}': Discovered {len(run_ckpts)} run(s) (cap={max_runs})")
+            display_family = (
+                f"{family_name} [blank:{','.join(map(str, args.blank_channels))}]"
+                if args.blank_channels
+                else family_name
+            )
+            print(f"  [RL Family] '{display_family}': Discovered {len(run_ckpts)} run(s) (cap={max_runs})")
 
             run_results: list[EvalResult] = []
             for run_label, ckpt_path in run_ckpts:
@@ -566,9 +578,10 @@ def main() -> None:
                 agent = RLAgent(ckpt_path, deterministic=args.deterministic)
                 res = evaluate_single_agent(
                     agent_or_factory=agent,
-                    agent_name=f"{family_name} ({run_label})",
+                    agent_name=f"{display_family} ({run_label})",
                     difficulty=args.difficulty,
                     seeds=seeds,
+                    blank_channels=args.blank_channels,
                     deterministic=args.deterministic,
                     verbose=False,
                 )
@@ -577,7 +590,7 @@ def main() -> None:
                 run_results.append(res)
 
             if run_results:
-                agg = aggregate_model_family_results(family_name, run_results)
+                agg = aggregate_model_family_results(display_family, run_results)
                 aggregated_all.append(agg)
 
     if not aggregated_all:
